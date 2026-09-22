@@ -40,7 +40,7 @@ The closer counts only at the **end** of what you say: the word, then about 400 
 
 **Confirmation.** A dispatch tick, then "Received." The rule is **earcons for machinery, voice for content.** **Learned in use:** with no capture signal, Nick said the same thing three times and got three answers.
 
-**While it works.** Tool calls are narrated in a quieter, quicker voice ("Running the test suite."). Anything said *to* you plays at full volume. **Learned in use:** half volume at 1.2x reads as "talking to yourself". Long turns open with a one-line spoken plan and add a line at each milestone. Those lines are what you interrupt against. After 15 quiet seconds, a soft still-here tone plays.
+**While it works.** Tool calls are narrated at a lower volume ("Running the test suite."). Anything said *to* you plays at full volume. **Learned in use:** quieter narration reads as "talking to yourself". Volume is set by earshot itself, so this works with any voice provider. Narration speed was cut because it depends on the provider (Nick, 2026-09-22). Long turns open with a one-line spoken plan and add a line at each milestone. Those lines are what you interrupt against. After 15 quiet seconds, a soft still-here tone plays.
 
 **The answer.** Two to four spoken sentences, with anything that needs your decision first. Then the closer, which is the context-window fill ("32 percent."). **Learned in use:** the percent became Nick's preferred closer. It tells you the turn is over and when to compact.
 
@@ -168,14 +168,14 @@ Word = (text, start_s, end_s, confidence)
 
 ```python
 class TTS(Protocol):
-    caps: TTSCaps     # streaming, speed, pauses, word_timestamps, pronunciation
+    caps: TTSCaps     # streaming, pauses, word_timestamps, pronunciation
     sample_rate: int
-    def speak(self, text: str, *, voice: str, speed=1.0
+    def speak(self, text: str, *, voice: str
               ) -> AsyncIterator[bytes]: ...   # PCM16 mono; cancel = stop iterating
 ```
 
 - **The core handles sentence splitting and volume.** The adapter only turns text into audio.
-- **Speed is explicit.** **Learned in use:** Cartesia honors speed only inside `generation_config` and silently ignores a top-level field.
+- **No speed control.** It was cut because providers don't all support it and handle it differently (Nick, 2026-09-22). Any speaking-rate setting belongs in that adapter's own config.
 - **Word timestamps are optional.** Where they exist, resume can pick up at the exact word.
 
 | | Speech to text | Text to speech |
@@ -202,6 +202,8 @@ class TTS(Protocol):
 ## 7. Permissions and safety
 
 **The problem.** In `-p` mode nobody is at a keyboard to answer "Allow this command?". Cortana's seat runs in `auto` permission mode. That's fine for its owner, but it isn't a default for a stranger.
+
+**Ruled (Nick, 2026-09-22): build voice allow/deny in v1.** It has never been tried, so the live trial decides whether it works. Nick and his buddy both run `auto` mode, so for them it only has to cover the few prompts that mode still asks.
 
 **The proposal.** Keep the user's own permission mode, and send prompts to the host (`--permission-prompts host`). earshot receives them on the stream-json control channel; the exact message shape needs a probe, alongside interrupt.
 
@@ -293,7 +295,7 @@ Avoid "Operator" as the product name, because it's an OpenAI product. It's fine 
 
 1. **Terms posture.** Is it OK for a public tool to drive a user's own `claude` under a Pro/Max subscription? *Recommend:* design it as drawn here (never touch auth, one human's cadence, idle close, nothing unattended), say so in the README, and check Anthropic's current CLI and Agent SDK terms before the public release.
 2. **Default turn ending for the buddy.** *Recommend:* the closer by default and inferred as opt-in, then let his 10-minute counted trial decide.
-3. **Permissions by voice, or keyboard only?** *Recommend:* voice with read-back and deny-on-silence, the keyboard always available, never bypass by default.
+3. ~~Permissions by voice, or keyboard only?~~ **Ruled 2026-09-22:** build voice allow/deny and judge it live (§7).
 4. **Default turn opening.** An address word over an open cloud mic, or a push-to-talk hotkey? Continuous Deepgram streaming costs about $0.46 an hour. *Recommend:* the address word with a local VAD gate so silence isn't streamed, and a hotkey as an option.
 5. **Default address word.** *Recommend:* "operator", configurable.
 6. **Raw CLI or Agent SDK?** *Recommend:* raw now, behind a `Seat` interface.
