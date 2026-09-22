@@ -258,3 +258,64 @@ def test_compact_by_voice_writes_the_slash_command(tmp_path):
 
     asyncio.run(scenario())
 
+
+def test_a_stop_holds_against_new_output_but_ends_on_new_input(tmp_path):
+    answers = {"first": [result("⟦voice⟧First answer.⟦/voice⟧", used=100, window=1000)],
+               "second": [result("⟦voice⟧Second answer.⟦/voice⟧", used=200, window=1000)]}
+    tts = FakeTTS(chunk_delay_s=0.02, chunks=8)
+
+    async def scenario():
+        host, seat, claude, stt, tts_, stream, mic, out, run = build(tmp_path, answers, tts=tts)
+        await until(lambda: stt.sessions)
+        stt.queue.put_nowait(Final("Operator, first over"))
+        await until(lambda: ("Received.", None) in tts.spoken)
+        stt.queue.put_nowait(Final("Operator stop"))  # while "Received." plays
+        await until(lambda: host.spoken.holds == frozenset({"user"}))
+        # the answer arrives while stopped: it queues silently
+        await until(lambda: any(e.text == "First answer." for e in host.spoken.entries))
+        await asyncio.sleep(0.1)
+        assert not any(t == "First answer." for t, _ in tts.spoken)
+        assert host.spoken.paused
+        # "resume" plays the stopped line and its backlog
+        stt.queue.put_nowait(Final("Operator resume"))
+        await until(lambda: ("10 percent.", None) in tts.spoken)
+        assert [t for t, _ in tts.spoken].count("Received.") == 2
+        assert ("First answer.", None) in tts.spoken
+        await until(lambda: not host.spoken.busy)
+        # a stop, then new INPUT: the stopped line is abandoned, new content plays
+        stt.queue.put_nowait(Final("Operator, second over"))
+        await until(lambda: [t for t, _ in tts.spoken].count("Received.") == 3)
+        stt.queue.put_nowait(Final("Operator stop"))
+        await until(lambda: host.spoken.holds == frozenset({"user"}))
+        await until(lambda: any(e.text == "Second answer." for e in host.spoken.entries))
+        n = len(tts.spoken)
+        stt.queue.put_nowait(Final("Operator status"))  # any command is input
+        await until(lambda: any(t.startswith("Link up.") for t, _ in tts.spoken))
+        assert not host.spoken.paused
+        assert "Second answer." not in [t for t, _ in tts.spoken[n:]]  # abandoned
+        stt.queue.put_nowait(Final("Operator quit"))
+        await run
+
+    asyncio.run(scenario())
+
+
+def test_compact_after_a_stop_is_heard(tmp_path):
+    answers = {"one": [result("⟦voice⟧One.⟦/voice⟧")]}
+
+    async def scenario():
+        host, seat, claude, stt, tts, stream, mic, out, run = build(tmp_path, answers)
+        await until(lambda: stt.sessions)
+        stt.queue.put_nowait(Final("Operator, one over"))
+        await until(lambda: ("One.", None) in tts.spoken)
+        await until(lambda: not host.spoken.busy)
+        stt.queue.put_nowait(Final("Operator stop"))
+        await until(lambda: host.spoken.holds == frozenset({"user"}))
+        stt.queue.put_nowait(Final("Operator compact"))  # the live lock-up: a
+        await until(lambda: seat.compact_pending)         # command clears the stop
+        await until(lambda: ("Compacting.", None) in tts.spoken)
+        assert [t for t, _ in tts.spoken][-2:] == ["Received.", "Compacting."]
+        assert not host.spoken.paused
+        stt.queue.put_nowait(Final("Operator quit"))
+        await run
+
+    asyncio.run(scenario())

@@ -10,6 +10,11 @@ N" and pause-while-the-user-talks all fall out of the cursor:
     command) and "talk" (the address word opened a turn). Playback runs
     only while neither holds. Pausing stops the line in flight; it
     replays from its start on resume.
+  * A user stop holds only what was playing. Output arriving while
+    stopped queues silently. user_input() (a turn opened or sent, a
+    command other than stop/resume) abandons the stopped line and
+    everything queued behind it and clears the hold, so what comes next
+    plays; "resume" alone plays the stopped line and its backlog.
   * replay_answer() ("again"): the last "answer" line at or before the
     cursor plays again, through its closer, and playback then resumes
     where it was. Acks, closers, narration and status lines are never
@@ -88,6 +93,16 @@ class SpokenLog:
         if who in self._holds:
             self._holds.discard(who)
             self._wake.set()
+
+    def user_input(self) -> None:
+        """New input from the user while stopped: the stopped line and
+        everything queued behind it are abandoned, and the hold clears."""
+        if "user" not in self._holds:
+            return
+        self._holds.discard("user")
+        self.cursor = len(self.entries)
+        self._window = None
+        self._wake.set()
 
     def _reference(self) -> int | None:
         if self.playing is not None:

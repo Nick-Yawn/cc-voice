@@ -114,6 +114,7 @@ class VoiceFront:
                 self._out(f"  ∅ ignored: {act[1]}")
                 self.host.log.write("dropped", text=act[1])
             elif kind == "open":
+                self.host.spoken.user_input()
                 self.host.spoken.pause("talk")
                 self.cue("capture")
                 self._out(f"you ▸ {act[1] or ''}")
@@ -192,6 +193,8 @@ class VoiceFront:
     def command(self, name: str, arg) -> None:
         host = self.host
         host.log.write("command", name=name, arg=arg)
+        if name not in ("stop", "resume"):
+            host.spoken.user_input()  # any other command is new input: a stop ends
         if name == "stop":
             host.spoken.pause("user")
             self._out("  · stopped")

@@ -168,6 +168,7 @@ class Host:
 
     def enqueue_turn(self, text: str) -> None:
         self.log.write("dispatch", text=text)
+        self.spoken.user_input()
         self.turn_q.put_nowait(text)
 
     def command_compact(self) -> None:
@@ -303,6 +304,8 @@ def parse_text_command(line: str) -> tuple[str, int | None] | None:
 
 async def handle_command(host: Host, name: str, arg) -> None:
     host.log.write("command", name=name, arg=arg)
+    if name not in ("stop", "resume"):
+        host.spoken.user_input()  # any other command is new input: a stop ends
     if name == "stop":
         host.spoken.pause("user")
         host._out("  · paused")
