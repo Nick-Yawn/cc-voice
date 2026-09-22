@@ -78,6 +78,7 @@ class Host:
         self.last_spoken_at = clock()
         self.last_pct: int | None = None
         self._compact_queued = False
+        self._inflight = 0  # dequeued, not yet written (a spawn in progress)
         self._worker: asyncio.Task | None = None
         self.status_extra = None  # callable -> dict merged into the snapshot
         self.on_still_here = None  # callable, fired after a quiet stretch
@@ -180,6 +181,7 @@ class Host:
     async def turn_worker(self) -> None:
         while True:
             item = await self.turn_q.get()
+            self._inflight += 1
             try:
                 if item is COMPACT:
                     while self.seat.occupied:
@@ -196,6 +198,7 @@ class Host:
                 self.spoken.append("That message did not reach Claude.", "speech",
                                    kind="error")
             finally:
+                self._inflight -= 1
                 if item is COMPACT:
                     self._compact_queued = False
 
@@ -240,7 +243,7 @@ class Host:
 
     @property
     def occupied(self) -> bool:
-        return self.seat.occupied or not self.turn_q.empty()
+        return self.seat.occupied or not self.turn_q.empty() or self._inflight > 0
 
     async def quit(self) -> None:
         if self.occupied:
