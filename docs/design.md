@@ -291,15 +291,16 @@ Avoid "Operator" as the product name, because it's an OpenAI product. It's fine 
 
 ---
 
-## 12. Open questions for Nick
+## 12. Rulings (Nick, 2026-09-22)
 
-1. **Terms posture.** Is it OK for a public tool to drive a user's own `claude` under a Pro/Max subscription? *Recommend:* design it as drawn here (never touch auth, one human's cadence, idle close, nothing unattended), say so in the README, and check Anthropic's current CLI and Agent SDK terms before the public release.
-2. **Default turn ending for the buddy.** *Recommend:* the closer by default and inferred as opt-in, then let his 10-minute counted trial decide.
-3. ~~Permissions by voice, or keyboard only?~~ **Ruled 2026-09-22:** build voice allow/deny and judge it live (§7).
-4. **Default turn opening.** An address word over an open cloud mic, or a push-to-talk hotkey? Continuous Deepgram streaming costs about $0.46 an hour. *Recommend:* the address word with a local VAD gate so silence isn't streamed, and a hotkey as an option.
-5. **Default address word.** *Recommend:* "operator", configurable.
-6. **Raw CLI or Agent SDK?** *Recommend:* raw now, behind a `Seat` interface.
-7. **Code lineage.** *Recommend:* copy the pure pieces (TurnMachine, parser, narration, scrub) and their tests into earshot, and later have Cortana's seat depend on earshot, not the reverse.
-8. **License.** *Recommend:* MIT.
-9. **The percent as every turn's closer, even for strangers?** *Recommend:* yes by default, with a setting to switch to a tone.
-10. **Name.** *Recommend:* "earshot", shipped as `earshot-voice`.
+- **Terms:** not a blocker. Go ahead; if Anthropic objects, they'll say so.
+- **Turn ending:** "over" is the default closer, and inferred ending is opt-in.
+- **Permissions:** build voice allow/deny and judge it live (§7).
+- **Accepted as recommended:**
+  - The address word opens a turn, gated by local VAD. A push-to-talk hotkey is optional.
+  - The address word is "operator", configurable.
+  - Raw CLI now, behind a `Seat` interface.
+  - Copy the pure pieces from Cortana; Cortana depends on earshot later.
+  - MIT license.
+  - The percent is the closer by default, with a tone as a setting.
+- **Name: OPEN.** Nick doesn't love "earshot" or the alternatives in §11. The candidate is **"cc-voice"** (CC = Claude Code, without putting "Claude" in the name). `cc-voice` and `ccvoice` are both free on PyPI as of 2026-09-22. "earshot" stays as the working name and repo name until Nick decides.
