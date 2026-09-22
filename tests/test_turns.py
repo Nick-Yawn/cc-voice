@@ -93,24 +93,39 @@ def test_commands_never_open_a_turn():
     m = machine()
     assert m.feed("Operator status") == [("command", "status", None)]
     assert m.feed("Operator, say that again.") == [("command", "again", None)]
+    assert m.feed("Operator repeat") == [("command", "again", None)]
     assert m.feed("Operator stop") == [("command", "stop", None)]
     assert m.feed("Operator resume") == [("command", "resume", None)]
     assert m.feed("Operator, quit.") == [("command", "quit", None)]
     assert m.feed("Operator, compact yourself.") == [("command", "compact", None)]
-    assert m.feed("Operator back two") == [("command", "again", 2)]
-    assert m.feed("Operator back 3") == [("command", "again", 3)]
-    assert m.feed("Operator back") == [("command", "again", 1)]
     assert m.state == m.IDLE
 
 
 def test_command_for():
     assert command_for("stop") == ("stop", None)
-    assert command_for("back") == ("again", 1)
-    assert command_for("back two") == ("again", 2)
-    assert command_for("back to") == ("again", 2)  # STT hears "to"
-    assert command_for("back 7") == ("again", 7)
+    assert command_for("again") == ("again", None)
+    assert command_for("repeat") == ("again", None)
+    assert command_for("cancel") == ("cancel", None)
+    assert command_for("never mind") == ("cancel", None)
+    assert command_for("nevermind") == ("cancel", None)
+    # "back N" was retired: no phrase names a replay count anymore
+    assert command_for("back") is None
+    assert command_for("back two") is None
+    assert command_for("back to") is None
+    assert command_for("back 7") is None
     assert command_for("back somewhere") is None
     assert command_for("run the tests") is None
+
+
+def test_back_n_no_longer_fires_a_command():
+    # "back two" isn't recognized anymore: it's ordinary dictated
+    # content, so it opens a turn like any other speech would.
+    m = machine()
+    assert m.feed("Operator back two") == [("open", "back two")]
+    assert m.state == m.OPEN
+    assert m.feed("over")[-1] == ("closing", "back two")
+    assert m.settle() == [("dispatch", "back two")]
+    assert m.state == m.IDLE
 
 
 def test_stop_fires_anywhere_other_commands_need_the_first_word():
@@ -137,6 +152,11 @@ def test_cancel_discards_the_open_turn():
     # cancel with nothing captured reports no loss
     m.feed("Operator.")
     assert m.feed("Operator cancel") == [("command", "cancel", None)]
+    assert m.state == m.IDLE
+    # "nevermind" (dictation often joins the two words) is the same alias
+    m.feed("Operator, another thought")
+    assert m.feed("Operator, nevermind.") == \
+        [("abandoned", "another thought"), ("command", "cancel", None)]
     assert m.state == m.IDLE
 
 

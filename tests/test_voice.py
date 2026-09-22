@@ -183,7 +183,7 @@ def test_talking_pauses_playback_and_commands_drive_the_cursor(tmp_path):
         await until(lambda: host.spoken.holds == frozenset({"user"}))
         stt.queue.put_nowait(Final("Operator resume"))
         await until(lambda: not host.spoken.paused)
-        # "again" and "back two" move the cursor
+        # "again" and its "repeat" alias move the cursor
         await until(lambda: ("10 percent.", None) in tts.spoken)
         await until(lambda: not host.spoken.busy)
         n = len(tts.spoken)
@@ -191,9 +191,9 @@ def test_talking_pauses_playback_and_commands_drive_the_cursor(tmp_path):
         await until(lambda: len(tts.spoken) == n + 1)
         assert tts.spoken[-1] == ("10 percent.", None)
         await until(lambda: not host.spoken.busy)
-        stt.queue.put_nowait(Final("Operator back two"))
-        await until(lambda: len(tts.spoken) >= n + 3)
-        assert tts.spoken[n + 1][0].startswith("A long spoken")
+        stt.queue.put_nowait(Final("Operator repeat"))
+        await until(lambda: len(tts.spoken) == n + 2)
+        assert tts.spoken[-1] == ("10 percent.", None)
         # status speaks the mic and link clauses
         stt.queue.put_nowait(Final("Operator status"))
         await until(lambda: any(t.startswith("Link up.") for t, _ in tts.spoken))

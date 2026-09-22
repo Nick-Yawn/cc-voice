@@ -112,9 +112,9 @@ A rising chime means the mic and the speech link are up. Then:
 | "operator, ..." | opens a turn (a soft tick confirms it); keep talking, pause as long as you like |
 | "... over" | sends the turn (a rising two-note run, then "Received.") |
 | "operator stop" / "operator resume" | pause / resume speech where it stopped |
-| "operator again" / "operator back two" | replay the last line, or N back |
+| "operator again" / "operator repeat" | replay the last line |
 | "operator status" | link, mic, session, what Claude is doing, context fill |
-| "operator cancel" | discard the turn being dictated |
+| "operator cancel" / "operator never mind" | discard the turn being dictated |
 | "operator compact" | send `/compact` |
 | "operator quit" | end cleanly (after any turn in flight lands) |
 

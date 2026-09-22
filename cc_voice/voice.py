@@ -303,7 +303,7 @@ class VoiceFront:
         host.start()
         self._out(f"[cc-voice in {host.project_dir}]")
         self._out(f"[say '{self.address} ...' to open a turn and end it with"
-                  f" '{self.closer}'; '{self.address} stop / resume / again / back two /"
+                  f" '{self.closer}'; '{self.address} stop / resume / again / never mind /"
                   " status / cancel / compact / quit' are local; unaddressed speech"
                   " is ignored]")
         self._tasks = [

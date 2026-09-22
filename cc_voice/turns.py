@@ -27,7 +27,10 @@ Actions returned by feed() / settle() / abandon_stale(), in order:
   ("append", text)            content added to the open turn
   ("closing", turn)           the closer ended this final; settle() next
   ("dispatch", turn)          the closer held through the silence: send
-  ("command", name, arg)      a local command (arg: replay count, else None)
+  ("command", name, arg)      a local command (arg is always None; no
+                               phrase names a replay count, but the
+                               SpokenLog cursor keeps the n-back ability
+                               for other code to call)
   ("abandoned", text)         an open turn was discarded un-dispatched
 """
 
@@ -50,18 +53,13 @@ COMMANDS = {
     "where are we": "status",
     "cancel": "cancel",
     "never mind": "cancel",
+    "nevermind": "cancel",  # dictation often joins the two words
     "compact": "compact",
     "compact yourself": "compact",
     "quit": "quit",
     "exit": "quit",
     "end session": "quit",
 }
-
-# "back two" / "back 2": replay N lines back (a bare "back" is one).
-_NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-                 "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-                 "to": 2, "too": 2, "for": 4}
-_BACK_RE = re.compile(r"^back(?: ([a-z0-9]+))?$")
 
 
 def _norm(word: str) -> str:
@@ -73,16 +71,6 @@ def command_for(tail: str) -> tuple[str, int | None] | None:
     cmd = COMMANDS.get(tail)
     if cmd:
         return (cmd, None)
-    m = _BACK_RE.match(tail)
-    if m:
-        arg = m.group(1)
-        if arg is None:
-            return ("again", 1)
-        if arg.isdigit():
-            return ("again", int(arg))
-        if arg in _NUMBER_WORDS:
-            return ("again", _NUMBER_WORDS[arg])
-        return None
     return None
 
 

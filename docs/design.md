@@ -53,9 +53,9 @@ The closer counts only at the **end** of what you say: the word, then about 400 
 | Say | Does |
 |---|---|
 | stop / resume | pause / resume speech where it stopped |
-| again, back two | replay the last line, or N back |
+| again, repeat | replay the last line |
 | status | link, mic, session, what Claude is doing, context fill |
-| cancel | discard the turn being dictated |
+| cancel, never mind | discard the turn being dictated |
 | interrupt | stop Claude's running query (probe first, §9) |
 | compact | send `/compact` |
 | allow / deny | answer a permission question (§7) |
