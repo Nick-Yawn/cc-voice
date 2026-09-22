@@ -199,7 +199,7 @@ class VoiceFront:
             host.spoken.resume("user")
             self._out("  · resumed")
         elif name == "again":
-            if host.spoken.replay(arg or 1) is None:
+            if host.spoken.replay_answer() is None:
                 host.say_local("Nothing to replay yet.")
         elif name == "status":
             host.command_status()

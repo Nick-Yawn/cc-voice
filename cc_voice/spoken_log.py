@@ -3,13 +3,17 @@
 Nothing is dropped; the cursor just moves. Pause, resume, "again", "back
 N" and pause-while-the-user-talks all fall out of the cursor:
 
-  * append() adds a line and wakes the player.
+  * append() adds a line and wakes the player. Every line has a role:
+    "answer" (content said to the user), "closer", "ack", "narration"
+    or "status".
   * pause(who) / resume(who): two independent holds, "user" (the stop
     command) and "talk" (the address word opened a turn). Playback runs
     only while neither holds. Pausing stops the line in flight; it
     replays from its start on resume.
-  * replay(n): move the cursor n lines back from the line playing (or
-    the last one played) and clear the user hold.
+  * replay_answer() ("again"): the last "answer" line at or before the
+    cursor plays again, through its closer, and playback then resumes
+    where it was. Acks, closers, narration and status lines are never
+    what "again" means. replay(n) moves the cursor n raw lines back.
 
 The player calls `speak(text, register)` for each entry; the callable
 owns synthesis and playback (or printing, in text mode) and must honor
@@ -21,12 +25,16 @@ import time
 from dataclasses import dataclass, field
 
 
+ANSWER, CLOSER = "answer", "closer"
+
+
 @dataclass
 class Entry:
     index: int
     text: str
     register: str
     kind: str
+    role: str = ANSWER
     ts: float = field(default_factory=time.time)
 
 
@@ -43,11 +51,13 @@ class SpokenLog:
         self._current: asyncio.Task | None = None
         self._interrupted = False
         self._task: asyncio.Task | None = None
+        self._window: tuple[int, int] | None = None  # a replay: (last index, resume at)
 
     # -- writing ---------------------------------------------------------
 
-    def append(self, text: str, register: str = "speech", kind: str = "say") -> Entry:
-        entry = Entry(len(self.entries), text, register, kind)
+    def append(self, text: str, register: str = "speech", kind: str = "say",
+               role: str = ANSWER) -> Entry:
+        entry = Entry(len(self.entries), text, register, kind, role)
         self.entries.append(entry)
         self._wake.set()
         return entry
@@ -79,20 +89,54 @@ class SpokenLog:
             self._holds.discard(who)
             self._wake.set()
 
+    def _reference(self) -> int | None:
+        if self.playing is not None:
+            return self.playing
+        return self.cursor - 1 if self.cursor > 0 else None
+
     def replay(self, n: int = 1) -> int | None:
         """Cursor to the n-th line back; None when nothing has played."""
-        if self.playing is not None:
-            ref = self.playing
-        elif self.cursor > 0:
-            ref = self.cursor - 1
-        else:
+        ref = self._reference()
+        if ref is None:
             return None
         target = max(0, ref - (max(1, n) - 1))
+        self._window = None
+        self._jump(target)
+        return target
+
+    def replay_answer(self) -> int | None:
+        """"Again": the last answer at or before the cursor plays again,
+        through its closer if one follows, then playback resumes where it
+        was. None when no answer has played yet."""
+        ref = self._reference()
+        if ref is None:
+            return None
+        target = next((i for i in range(ref, -1, -1) if self.entries[i].role == ANSWER), None)
+        if target is None:
+            return None
+        resume_at = self.playing + 1 if self.playing is not None else self.cursor
+        end = next((i for i in range(target, len(self.entries))
+                    if self.entries[i].role == CLOSER), target)
+        self._window = (end, resume_at)
+        self._jump(target)
+        return target
+
+    def _jump(self, target: int) -> None:
         self._interrupt_current()
         self.cursor = target
         self._holds.discard("user")
         self._wake.set()
-        return target
+
+    def _advance(self, idx: int) -> None:
+        """The line at idx is done: the cursor moves on, unless something
+        moved it meanwhile; a replay window ending here resumes."""
+        if self.cursor != idx:
+            return
+        if self._window is not None and idx >= self._window[0]:
+            self.cursor = max(self._window[1], idx + 1)
+            self._window = None
+        else:
+            self.cursor = idx + 1
 
     def _interrupt_current(self) -> None:
         cur = self._current
@@ -141,11 +185,9 @@ class SpokenLog:
             except Exception as exc:
                 if self.on_error:
                     self.on_error(entry, exc)
-                if self.cursor == idx:
-                    self.cursor = idx + 1  # a bad line is skipped, not looped
+                self._advance(idx)  # a bad line is skipped, not looped
             else:
-                if self.cursor == idx:
-                    self.cursor = idx + 1
+                self._advance(idx)
             finally:
                 self.playing = None
                 self._current = None

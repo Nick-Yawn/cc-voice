@@ -84,11 +84,11 @@ def test_commands_pause_resume_replay_and_compact(tmp_path):
         lines.put_nowait(":resume\n")
         await until(lambda: not host.spoken.paused)
         n = len(voice.lines)
-        lines.put_nowait(":again\n")
-        await until(lambda: len(voice.lines) == n + 1)
-        assert voice.lines[-1] == ("10 percent.", "speech")
-        lines.put_nowait(":back 2\n")
-        await until(lambda: len(voice.lines) == n + 3)
+        lines.put_nowait(":again\n")  # the last answer, through its closer
+        await until(lambda: len(voice.lines) == n + 2)
+        assert [t for t, _ in voice.lines[-2:]] == ["First answer.", "10 percent."]
+        lines.put_nowait(":back 2\n")  # two raw lines back
+        await until(lambda: len(voice.lines) == n + 4)
         assert [t for t, _ in voice.lines[-2:]] == ["First answer.", "10 percent."]
         lines.put_nowait(":compact\n")
         await until(lambda: seat.compact_pending)
@@ -164,7 +164,7 @@ def test_still_here_fires_only_while_busy_and_quiet(tmp_path):
 def test_parse_text_command():
     assert parse_text_command("hello there") is None
     assert parse_text_command("quit") == ("quit", None)
-    assert parse_text_command(":again") == ("again", 1)
+    assert parse_text_command(":again") == ("again", None)
     assert parse_text_command(":back 3") == ("again", 3)
     assert parse_text_command(":back") == ("again", 1)
     assert parse_text_command(":stop") == ("stop", None)

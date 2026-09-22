@@ -253,7 +253,7 @@ def test_tools_narrate_at_the_narration_register():
     tr = Translator()
     out = feed(tr, assistant_tool("Read", {"file_path": "a.py"}))
     assert out == [{"kind": "tool", "name": "Read", "input": {"file_path": "a.py"},
-                    "say": [{"text": "Reading a.py.", "register": "narration"}]}]
+                    "say": [{"text": "Reading a.py.", "register": "narration", "role": "narration"}]}]
     silent = feed(tr, assistant_tool("TodoWrite", {}))
     assert silent == [{"kind": "tool", "name": "TodoWrite", "input": {}}]
 

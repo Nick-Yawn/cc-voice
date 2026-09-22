@@ -182,16 +182,18 @@ def test_talking_pauses_playback_and_commands_drive_the_cursor(tmp_path):
         await until(lambda: host.spoken.holds == frozenset({"user"}))
         stt.queue.put_nowait(Final("Operator resume"))
         await until(lambda: not host.spoken.paused)
-        # "again" and its "repeat" alias move the cursor
+        # "again" and its "repeat" alias replay the ANSWER (through its
+        # closer), never the closer alone
         await until(lambda: ("10 percent.", None) in tts.spoken)
         await until(lambda: not host.spoken.busy)
         n = len(tts.spoken)
         stt.queue.put_nowait(Final("Operator again"))
-        await until(lambda: len(tts.spoken) == n + 1)
-        assert tts.spoken[-1] == ("10 percent.", None)
+        await until(lambda: len(tts.spoken) == n + 2)
+        assert [t for t, _ in tts.spoken[-2:]] == \
+            ["A long spoken answer that keeps going.", "10 percent."]
         await until(lambda: not host.spoken.busy)
         stt.queue.put_nowait(Final("Operator repeat"))
-        await until(lambda: len(tts.spoken) == n + 2)
+        await until(lambda: len(tts.spoken) == n + 4)
         assert tts.spoken[-1] == ("10 percent.", None)
         # status speaks the mic and link clauses
         stt.queue.put_nowait(Final("Operator status"))
@@ -255,3 +257,4 @@ def test_compact_by_voice_writes_the_slash_command(tmp_path):
         await run
 
     asyncio.run(scenario())
+

@@ -156,8 +156,15 @@ def is_empty_machine_result(origin: str | None, text: str) -> bool:
     return not text.strip()
 
 
-def _say(text: str, register: str = SPEECH) -> dict:
-    return {"text": text, "register": register}
+# Roles: what a spoken line IS, for the replay cursor. "answer" is the
+# ⟦voice⟧ content said to the user (a result's block, a mid-turn block);
+# "closer" the percent or its fallback; "narration" a tool line;
+# "status" cc-voice's own remarks (compaction marks, errors, acks).
+ANSWER, CLOSER, NARRATION_ROLE, STATUS = "answer", "closer", "narration", "status"
+
+
+def _say(text: str, register: str = SPEECH, role: str = ANSWER) -> dict:
+    return {"text": text, "register": register, "role": role}
 
 
 class Translator:
@@ -253,7 +260,7 @@ class Translator:
             if owed:
                 detail += f" with {owed}"
             out.append({"kind": "error", "message": detail,
-                        "say": [_say("Claude's process exited unexpectedly.")]})
+                        "say": [_say("Claude's process exited unexpectedly.", role=STATUS)]})
         out.append({"kind": "seat", "state": "exited", "rc": rc})
         self.query_open = False
         self.unconsumed = 0
@@ -269,7 +276,7 @@ class Translator:
             out.append({"kind": "error",
                         "message": f"claude idle-closed with {owed}",
                         "say": [_say("A message was never read before the"
-                                     " idle close.")]})
+                                     " idle close.", role=STATUS)]})
         out.append({"kind": "seat", "state": "idle_closed"})
         self.unconsumed = 0
         self._clear_compact()
@@ -328,11 +335,11 @@ class Translator:
             if self._compact_write_pending:
                 return []  # ours: "Compacting." was said at write time
             return [{"kind": "say", "text": COMPACTING,
-                     "say": [_say(COMPACTING)]}]
+                     "say": [_say(COMPACTING, role=STATUS)]}]
         if sub == "compact_boundary":
             self._in_compaction = True
             return [{"kind": "say", "text": COMPACTED,
-                     "say": [_say(COMPACTED)]}]
+                     "say": [_say(COMPACTED, role=STATUS)]}]
         return []
 
     def _user(self, obj: dict) -> list[dict]:
@@ -355,7 +362,7 @@ class Translator:
                 line = narrate_tool(name, inp)
                 event = {"kind": "tool", "name": name, "input": inp}
                 if line:
-                    event["say"] = [_say(line, NARRATION)]
+                    event["say"] = [_say(line, NARRATION, NARRATION_ROLE)]
                 out.append(event)
             elif ev[0] == "speak":
                 text = ev[1]
@@ -412,11 +419,11 @@ class Translator:
             return event
         lines: list[dict] = []
         if is_error:
-            lines.append(_say(TURN_FAILED))
+            lines.append(_say(TURN_FAILED, role=STATUS))
         elif block is None:
-            lines.append(_say(NO_VOICE_BLOCK))
+            lines.append(_say(NO_VOICE_BLOCK, role=STATUS))
         elif block not in self._streamed:
             lines.append(_say(block))
-        lines.append(_say(closer))
+        lines.append(_say(closer, role=CLOSER))
         event["say"] = lines
         return event

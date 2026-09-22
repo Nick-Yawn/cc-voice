@@ -88,7 +88,7 @@ class Host:
     def say_local(self, text: str) -> None:
         """A line cc-voice itself composes (status, acks)."""
         self._out(f"  · {text}")
-        self.spoken.append(text, "speech", kind="local")
+        self.spoken.append(text, "speech", kind="local", role="status")
 
     def _spoken_started(self, entry) -> None:
         self.last_spoken_at = self._clock()
@@ -115,7 +115,7 @@ class Host:
         if kind == "accepted":
             self._out(f"→ sent: {ev.get('text', '')}")
             self.turns += 1
-            self.spoken.append(RECEIVED, "speech", kind="ack")
+            self.spoken.append(RECEIVED, "speech", kind="ack", role="ack")
         elif kind == "seat":
             state = ev.get("state")
             if state in ("started", "resumed"):
@@ -161,7 +161,8 @@ class Host:
         elif kind == "injected":
             self._out("  (a background task's completion joined the running query)")
         for line in ev.get("say") or []:
-            self.spoken.append(line["text"], line["register"], kind=kind)
+            self.spoken.append(line["text"], line["register"], kind=kind,
+                               role=line.get("role", "answer"))
 
     # -- messages --------------------------------------------------------------
 
@@ -196,7 +197,7 @@ class Host:
                 self._out(f"[turn error: {exc!r}]")
                 self.log.write("turn_error", error=repr(exc))
                 self.spoken.append("That message did not reach Claude.", "speech",
-                                   kind="error")
+                                   kind="error", role="status")
             finally:
                 self._inflight -= 1
                 if item is COMPACT:
@@ -285,10 +286,10 @@ def parse_text_command(line: str) -> tuple[str, int | None] | None:
         return None
     name = words[0].lower()
     if name in ("again", "replay", "repeat"):
-        return ("again", 1)
+        return ("again", None)  # the last answer
     if name == "back":
         try:
-            return ("again", int(words[1]) if len(words) > 1 else 1)
+            return ("again", int(words[1]) if len(words) > 1 else 1)  # n raw lines
         except ValueError:
             return ("again", 1)
     if name in ("stop", "pause"):
@@ -309,8 +310,8 @@ async def handle_command(host: Host, name: str, arg) -> None:
         host.spoken.resume("user")
         host._out("  · resumed")
     elif name == "again":
-        n = arg or 1
-        if host.spoken.replay(n) is None:
+        played = host.spoken.replay(arg) if arg else host.spoken.replay_answer()
+        if played is None:
             host._out("  · nothing to replay yet")
     elif name == "status":
         host.command_status()
