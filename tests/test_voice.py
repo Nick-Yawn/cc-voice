@@ -4,15 +4,15 @@ are observable."""
 
 import asyncio
 
-from earshot import earcons
-from earshot.app import Host
-from earshot.audio import Playback
-from earshot.config import DEFAULTS, deep_merge
-from earshot.providers import Error, Final, Partial, SpeechStarted
-from earshot.providers.fake import FakeSTT, FakeTTS
-from earshot.seat import Seat
-from earshot.state import EventLog, LockFile, SessionPin
-from earshot.voice import run_voice
+from cc_voice import earcons
+from cc_voice.app import Host
+from cc_voice.audio import Playback
+from cc_voice.config import DEFAULTS, deep_merge
+from cc_voice.providers import Error, Final, Partial, SpeechStarted
+from cc_voice.providers.fake import FakeSTT, FakeTTS
+from cc_voice.seat import Seat
+from cc_voice.state import EventLog, LockFile, SessionPin
+from cc_voice.voice import run_voice
 from tests.fakes import ScriptedClaude, assistant_tool, result, until
 
 

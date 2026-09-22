@@ -1,10 +1,10 @@
 import json
 import os
 
-from earshot import config as cfgmod
-from earshot.config import api_keys, child_env, deep_merge, load_config
-from earshot.contract import contract_text, write_contract
-from earshot.state import (
+from cc_voice import config as cfgmod
+from cc_voice.config import api_keys, child_env, deep_merge, load_config
+from cc_voice.contract import contract_text, write_contract
+from cc_voice.state import (
     EventLog,
     LockFile,
     SessionPin,
@@ -19,7 +19,7 @@ def test_defaults_and_overlays(tmp_path):
     user.write_text('[words]\naddress = "computer"\n[volumes]\nnarration = 0.3\n')
     proj = tmp_path / "proj"
     proj.mkdir()
-    (proj / ".earshot.toml").write_text('[words]\ncloser = "send"\n[tts]\nvoice = "v1"\n')
+    (proj / ".cc-voice.toml").write_text('[words]\ncloser = "send"\n[tts]\nvoice = "v1"\n')
     cfg = load_config(proj, user_path=user)
     assert cfg["words"] == {"address": "computer", "closer": "send",
                             "filler_before_address": False}

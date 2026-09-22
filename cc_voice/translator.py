@@ -34,7 +34,7 @@ import json
 import re
 import time
 
-from earshot.narrate import narrate_tool
+from cc_voice.narrate import narrate_tool
 
 VOICE_RE = re.compile(r"⟦voice⟧\s*(.*?)\s*⟦/voice⟧", re.DOTALL)
 
@@ -44,7 +44,7 @@ COMPACTING = "Compacting."
 COMPACTED = "Compacted."
 
 # Spoken registers: what is said TO the user plays at full volume; what
-# earshot says while working (tool narration) plays quieter, so the two
+# cc-voice says while working (tool narration) plays quieter, so the two
 # are told apart by ear.
 SPEECH = "speech"
 NARRATION = "narration"

@@ -3,7 +3,7 @@ running the voice loop without keys."""
 
 import asyncio
 
-from earshot.providers import STTCaps, TTSCaps
+from cc_voice.providers import STTCaps, TTSCaps
 
 
 class FakeSTTSession:

@@ -1,4 +1,4 @@
-"""The SpokenLog: every line earshot says, and a cursor playing through it.
+"""The SpokenLog: every line cc-voice says, and a cursor playing through it.
 
 Nothing is dropped; the cursor just moves. Pause, resume, "again", "back
 N" and pause-while-the-user-talks all fall out of the cursor:

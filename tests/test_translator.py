@@ -2,7 +2,7 @@
 
 import json
 
-from earshot.translator import (
+from cc_voice.translator import (
     NO_VOICE_BLOCK,
     TURN_FAILED,
     Translator,

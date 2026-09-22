@@ -1,16 +1,16 @@
-# earshot
+# cc-voice
 
 A voice interface for Claude Code. You talk to your coding agent, and it
 talks back.
 
-Run `earshot` in a project folder. Say the address word ("operator"),
+Run `cc-voice` in a project folder. Say the address word ("operator"),
 talk, and end with "over". Your words go to your own installed `claude`
 as a message. The full answer appears in the terminal, and a short
 spoken summary is read aloud, followed by the context-window fill
 ("32 percent."), which is how you know the turn is over.
 
 Status: the first usable version. Text and voice both work end to end;
-voice permission prompts, interrupting a running query, and `earshot
+voice permission prompts, interrupting a running query, and `cc-voice
 setup` are not built yet. See `docs/design.md` for the design and its
 open questions.
 
@@ -19,9 +19,9 @@ open questions.
 - macOS (Linux should work; Windows is not supported yet).
 - Python 3.11 or newer.
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) installed
-  and logged in. earshot never handles the login; it drives the `claude`
+  and logged in. cc-voice never handles the login; it drives the `claude`
   binary on your PATH under your own account.
-- Headphones. earshot scrubs its own control words from everything it
+- Headphones. cc-voice scrubs its own control words from everything it
   speaks, but on open speakers the mic still hears the voice.
 - For voice mode, two API keys:
   - [Deepgram](https://deepgram.com) for speech to text (`DEEPGRAM_API_KEY`).
@@ -36,20 +36,20 @@ Text mode needs no keys and no audio device.
 From a checkout:
 
 ```sh
-git clone git@github.com:Nick-Yawn/earshot.git
-cd earshot
+git clone git@github.com:Nick-Yawn/cc-voice.git
+cd cc-voice
 python3 -m venv .venv && .venv/bin/pip install -e .
 ```
 
 or with [uv](https://docs.astral.sh/uv/): `uv venv && uv pip install -e .`
 
-That puts an `earshot` command in the venv (`.venv/bin/earshot`). The
+That puts a `cc-voice` command in the venv (`.venv/bin/cc-voice`). The
 audio layer uses `sounddevice`, which needs PortAudio; on macOS the
 wheel bundles it. On Linux, `apt install libportaudio2` first.
 
 ## Configure
 
-Create `~/.config/earshot/config.toml`. Only the voice id is required:
+Create `~/.config/cc-voice/config.toml`. Only the voice id is required:
 
 ```toml
 [tts]
@@ -73,7 +73,7 @@ earcons = 0.6
 # dev = "devv"
 ```
 
-A project can override any of it with a `.earshot.toml` in its folder.
+A project can override any of it with a `.cc-voice.toml` in its folder.
 Keys come from the environment, never the config file:
 
 ```sh
@@ -81,7 +81,7 @@ export DEEPGRAM_API_KEY=...
 export CARTESIA_API_KEY=...
 ```
 
-earshot removes both keys from the child claude's environment.
+cc-voice removes both keys from the child claude's environment.
 
 ## Run
 
@@ -89,7 +89,7 @@ Try it without audio first:
 
 ```sh
 cd your-project
-earshot --text
+cc-voice --text
 ```
 
 Type a message and press Enter. You'll see claude start, the message go
@@ -102,7 +102,7 @@ Then with the microphone:
 
 ```sh
 cd your-project
-earshot
+cc-voice
 ```
 
 A rising chime means the mic and the speech link are up. Then:
@@ -121,14 +121,14 @@ A rising chime means the mic and the speech link are up. Then:
 Anything said without the address word is ignored. "operator" counts
 only as the first word you say; "over" counts only as the last word,
 followed by a short silence, so "bring that over to the other file"
-keeps going. Saying the address word while earshot is talking pauses
+keeps going. Saying the address word while cc-voice is talking pauses
 it; it resumes after your turn is sent or cancelled. You can speak while
 Claude works: the message reaches it at the next tool boundary.
 
 Useful flags: `--new` starts a fresh claude session instead of resuming
 the pinned one, `--resume SESSION_ID` pins a specific one, `--voice ID`
 overrides the voice, and anything after `--` goes to claude
-(`earshot -- --permission-mode acceptEdits`).
+(`cc-voice -- --permission-mode acceptEdits`).
 
 ## How it works
 
@@ -140,8 +140,8 @@ Translator turns the stream into narration, spoken lines and the percent
 closer; a SpokenLog plays a cursor through everything said, which is
 what makes pause, resume and replay work.
 
-Session state lives under `~/.local/state/earshot/projects/<project>/`:
-the pinned session id, a lock (so two earshots never drive one session,
+Session state lives under `~/.local/state/cc-voice/projects/<project>/`:
+the pinned session id, a lock (so two cc-voices never drive one session,
 and a stray child from a crashed run can be found and killed on the next
 start), a private log of every record heard and spoken, and the contract
 file. The child closes after 30 idle minutes and respawns on the next
@@ -152,7 +152,7 @@ turn.
 In `claude -p` mode nobody is at the keyboard to answer "Allow this?".
 Whatever your Claude Code settings would prompt for is, for now,
 answered as denied. Pre-approve what you want in your settings, or pass
-a permission mode through: `earshot -- --permission-mode acceptEdits`.
+a permission mode through: `cc-voice -- --permission-mode acceptEdits`.
 Answering prompts by voice is the next thing to build.
 
 ## Development

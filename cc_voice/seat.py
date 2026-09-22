@@ -27,7 +27,7 @@ import signal
 import sys
 import time
 
-from earshot.translator import Translator
+from cc_voice.translator import Translator
 
 SEAT_FLAGS = ["--input-format", "stream-json", "--output-format",
               "stream-json", "--verbose", "--replay-user-messages"]
@@ -351,7 +351,7 @@ class Seat:
         try:
             self._on_event(ev)
         except Exception as exc:
-            print(f"[earshot: event handler failed ({exc!r}); {ev.get('kind')} dropped]",
+            print(f"[cc-voice: event handler failed ({exc!r}); {ev.get('kind')} dropped]",
                   file=sys.stderr)
 
     def _logw(self, kind: str, **fields) -> None:

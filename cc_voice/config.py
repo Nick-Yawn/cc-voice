@@ -1,5 +1,5 @@
-"""Configuration: defaults, ~/.config/earshot/config.toml, a project's
-.earshot.toml overlay, and the API keys from the environment.
+"""Configuration: defaults, ~/.config/cc-voice/config.toml, a project's
+.cc-voice.toml overlay, and the API keys from the environment.
 
 Keys never live in the config file. They are read from DEEPGRAM_API_KEY
 and CARTESIA_API_KEY and removed from the child claude's environment:
@@ -11,8 +11,8 @@ import os
 import tomllib
 from pathlib import Path
 
-USER_CONFIG_PATH = Path("~/.config/earshot/config.toml")
-PROJECT_CONFIG_NAME = ".earshot.toml"
+USER_CONFIG_PATH = Path("~/.config/cc-voice/config.toml")
+PROJECT_CONFIG_NAME = ".cc-voice.toml"
 
 DEEPGRAM_KEY_ENV = "DEEPGRAM_API_KEY"
 CARTESIA_KEY_ENV = "CARTESIA_API_KEY"

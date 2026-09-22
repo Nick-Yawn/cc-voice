@@ -11,7 +11,7 @@ import asyncio
 import json
 import urllib.parse
 
-from earshot.providers import (
+from cc_voice.providers import (
     Error,
     Final,
     Partial,

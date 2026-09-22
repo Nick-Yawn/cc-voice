@@ -4,7 +4,7 @@ wss://api.cartesia.ai/tts/websocket: sentence-sized sends under one
 context (continue: true, then an empty transcript with continue: false
 to flush), base64 PCM chunks back until `done`. One websocket per
 utterance; the context carries prosody across the sentence seams.
-There is no speed field: earshot has no speed control.
+There is no speed field: cc-voice has no speed control.
 """
 
 import base64
@@ -12,8 +12,8 @@ import contextlib
 import json
 import uuid
 
-from earshot.providers import TTSCaps
-from earshot.text import sentence_chunks
+from cc_voice.providers import TTSCaps
+from cc_voice.text import sentence_chunks
 
 TTS_URL = "wss://api.cartesia.ai/tts/websocket"
 API_VERSION = "2026-08-14"

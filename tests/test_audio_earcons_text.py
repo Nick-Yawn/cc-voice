@@ -3,9 +3,9 @@ import threading
 import time
 from array import array
 
-from earshot import earcons
-from earshot.audio import Playback, scale_pcm, starved, watchdog_tick
-from earshot.text import Respeller, sentence_chunks
+from cc_voice import earcons
+from cc_voice.audio import Playback, scale_pcm, starved, watchdog_tick
+from cc_voice.text import Respeller, sentence_chunks
 
 
 # -- earcons --------------------------------------------------------------

@@ -2,7 +2,7 @@
 
 import asyncio
 
-from earshot.spoken_log import SpokenLog
+from cc_voice.spoken_log import SpokenLog
 
 
 class FakeVoice:

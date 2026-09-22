@@ -1,4 +1,4 @@
-from earshot.scrub import Scrubber, scrub
+from cc_voice.scrub import Scrubber, scrub
 
 
 def test_address_word_is_clipped_everywhere():

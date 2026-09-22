@@ -14,14 +14,14 @@ import contextlib
 import sys
 import time
 
-from earshot.app import Host
-from earshot.audio import MIC_RATE, Mic, Playback, watchdog_tick
-from earshot.earcons import get_set
-from earshot.providers import Error, Final, Partial, SpeechStarted, TurnEnd
-from earshot.scrub import Scrubber
-from earshot.spoken_log import SpokenLog
-from earshot.text import Respeller
-from earshot.turns import TurnMachine
+from cc_voice.app import Host
+from cc_voice.audio import MIC_RATE, Mic, Playback, watchdog_tick
+from cc_voice.earcons import get_set
+from cc_voice.providers import Error, Final, Partial, SpeechStarted, TurnEnd
+from cc_voice.scrub import Scrubber
+from cc_voice.spoken_log import SpokenLog
+from cc_voice.text import Respeller
+from cc_voice.turns import TurnMachine
 
 _REBUILD = object()  # a frame-queue sentinel: end this STT pass cleanly
 MIC_CONSTRUCT_MAX_FAILURES = 5
@@ -301,7 +301,7 @@ class VoiceFront:
     async def run(self) -> None:
         host = self.host
         host.start()
-        self._out(f"[earshot in {host.project_dir}]")
+        self._out(f"[cc-voice in {host.project_dir}]")
         self._out(f"[say '{self.address} ...' to open a turn and end it with"
                   f" '{self.closer}'; '{self.address} stop / resume / again / back two /"
                   " status / cancel / compact / quit' are local; unaddressed speech"
@@ -337,16 +337,16 @@ class VoiceFront:
 async def run_voice(host: Host, seat, cfg: dict, keys: dict, *, stt=None, tts=None,
                     playback: Playback | None = None, mic: Mic | None = None) -> None:
     if stt is None:
-        from earshot.providers.deepgram import DeepgramSTT
+        from cc_voice.providers.deepgram import DeepgramSTT
         stt = DeepgramSTT(keys["deepgram"], model=cfg["stt"]["model"])
     if tts is None:
-        from earshot.providers.cartesia import CartesiaTTS
+        from cc_voice.providers.cartesia import CartesiaTTS
         tts = CartesiaTTS(keys["cartesia"], cfg["tts"]["voice"], model=cfg["tts"]["model"])
     if playback is None:
         playback = Playback(enabled=True, device=cfg["audio"].get("output_device"),
                             rate=tts.sample_rate)
         if not playback.enabled:
-            print("earshot: no audio output device; run with --text", file=sys.stderr)
+            print("cc-voice: no audio output device; run with --text", file=sys.stderr)
             return
     if mic is None:
         mic = Mic(rate=MIC_RATE, device=cfg["audio"].get("input_device"))

@@ -7,9 +7,9 @@ import signal
 
 import pytest
 
-import earshot.seat as seat_mod
-from earshot.seat import Seat, SEAT_FLAGS, build_seat_command, user_message_line
-from earshot.state import LockFile, SessionPin
+import cc_voice.seat as seat_mod
+from cc_voice.seat import Seat, SEAT_FLAGS, build_seat_command, user_message_line
+from cc_voice.state import LockFile, SessionPin
 
 SID = "db54779a-0000-4000-8000-000000000000"
 

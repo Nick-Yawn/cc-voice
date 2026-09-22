@@ -8,10 +8,10 @@ import urllib.parse
 
 import pytest
 
-from earshot.providers import Error, Final, Partial, SpeechStarted, STT, TTS
-from earshot.providers.cartesia import CartesiaTTS, parse_message as parse_cartesia, request_json
-from earshot.providers.deepgram import DeepgramSTT, listen_url, parse_message as parse_deepgram
-from earshot.providers.fake import FakeSTT, FakeTTS
+from cc_voice.providers import Error, Final, Partial, SpeechStarted, STT, TTS
+from cc_voice.providers.cartesia import CartesiaTTS, parse_message as parse_cartesia, request_json
+from cc_voice.providers.deepgram import DeepgramSTT, listen_url, parse_message as parse_deepgram
+from cc_voice.providers.fake import FakeSTT, FakeTTS
 
 
 class FakeWS:

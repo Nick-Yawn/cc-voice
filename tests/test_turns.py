@@ -1,6 +1,6 @@
 """The TurnMachine: framing, the closer's silence window, commands."""
 
-from earshot.turns import TurnMachine, command_for
+from cc_voice.turns import TurnMachine, command_for
 
 
 class Clock:
