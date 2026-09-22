@@ -3,8 +3,14 @@
 wss://api.deepgram.com/v1/listen: linear16 PCM in, `Results` JSON out.
 `keyterm` params boost the address and closer words (Nova-3 only); the
 address word became reliable only once it was boosted. `vad_events`
-gives a SpeechStarted message at speech onset, the earliest signal that
-a pending closer is being talked over.
+gives a SpeechStarted message at speech onset.
+
+Everything vendor-shaped stays here: the message names, the ten-second
+no-audio close (the core's gate keeps audio flowing whenever the socket
+is open, so no KeepAlive is needed), and CloseStream, which makes the
+server flush its buffered audio into final transcripts before it closes
+the socket. close() waits for that flush, so the last words of an
+utterance are never lost to the close.
 """
 
 import asyncio
@@ -22,6 +28,7 @@ from cc_voice.providers import (
 
 LISTEN_URL = "wss://api.deepgram.com/v1/listen"
 DEFAULT_MODEL = "nova-3"
+CLOSE_FLUSH_S = 2.0  # how long close() waits for the server's flush
 
 
 def listen_params(model: str, rate: int, keyterms=(), language: str = "en") -> list[tuple]:
@@ -75,14 +82,18 @@ def parse_message(msg: dict):
 
 
 class DeepgramSession:
-    def __init__(self, ws):
+    def __init__(self, ws, flush_s: float = CLOSE_FLUSH_S):
         self._ws = ws
-        self._closed = False
+        self._flush_s = flush_s
+        self._closing = False
+        self._reading = False
+        self._ended = asyncio.Event()
 
     async def send(self, pcm16: bytes) -> None:
         await self._ws.send(pcm16)
 
     async def events(self):
+        self._reading = True
         try:
             async for raw in self._ws:
                 if isinstance(raw, bytes):
@@ -95,13 +106,22 @@ class DeepgramSession:
                 if ev is not None:
                     yield ev
         except Exception as exc:  # a closed or broken link: the caller reconnects
-            if not self._closed:
-                yield Error(f"deepgram link: {exc!r}")
+            if not self._closing:
+                yield Error(f"link: {exc!r}")
+        finally:
+            self._reading = False
+            self._ended.set()
 
     async def close(self) -> None:
-        self._closed = True
+        """Graceful: CloseStream, then the server's flushed finals reach
+        events() until it closes the socket (bounded by flush_s)."""
+        if self._closing:
+            return
+        self._closing = True
         try:
             await self._ws.send(json.dumps({"type": "CloseStream"}))
+            if self._reading:
+                await asyncio.wait_for(self._ended.wait(), self._flush_s)
         except Exception:
             pass
         try:
@@ -113,6 +133,7 @@ class DeepgramSession:
 class DeepgramSTT:
     caps = STTCaps(partials=True, word_timings=True, native_turns=False,
                    keyterms=True, streaming=True)
+    default_model = DEFAULT_MODEL
 
     def __init__(self, api_key: str, model: str = DEFAULT_MODEL, connect=None):
         self.api_key = api_key

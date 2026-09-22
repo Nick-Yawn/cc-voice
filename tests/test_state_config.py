@@ -1,8 +1,18 @@
 import json
 import os
 
+import pytest
+
 from cc_voice import config as cfgmod
-from cc_voice.config import api_keys, child_env, deep_merge, load_config
+from cc_voice.config import child_env, deep_merge, load_config
+from cc_voice.providers.registry import (
+    ConfigError,
+    KEY_ENV_VARS,
+    make_stt,
+    make_tts,
+    missing_keys,
+    required_key_envs,
+)
 from cc_voice.contract import contract_text, write_contract
 from cc_voice.state import (
     EventLog,
@@ -35,9 +45,27 @@ def test_defaults_and_overlays(tmp_path):
 def test_keys_come_from_env_and_leave_the_child_env():
     env = {"DEEPGRAM_API_KEY": "dg", "CARTESIA_API_KEY": "ck", "PATH": "/bin",
            "HOME": "/home/x"}
-    assert api_keys(env) == {"deepgram": "dg", "cartesia": "ck"}
     assert child_env(env) == {"PATH": "/bin", "HOME": "/home/x"}
-    assert api_keys({}) == {"deepgram": None, "cartesia": None}
+    assert set(KEY_ENV_VARS) == {"DEEPGRAM_API_KEY", "CARTESIA_API_KEY"}
+
+
+def test_startup_names_exactly_the_keys_the_chosen_providers_need():
+    cfg = deep_merge(cfgmod.DEFAULTS, {"stt": {"provider": "deepgram"},
+                                       "tts": {"provider": "cartesia", "voice": "v"}})
+    assert required_key_envs(cfg) == ["DEEPGRAM_API_KEY", "CARTESIA_API_KEY"]
+    assert missing_keys(cfg, {}) == ["DEEPGRAM_API_KEY", "CARTESIA_API_KEY"]
+    assert missing_keys(cfg, {"DEEPGRAM_API_KEY": "dg"}) == ["CARTESIA_API_KEY"]
+    assert missing_keys(cfg, {"DEEPGRAM_API_KEY": "dg", "CARTESIA_API_KEY": "ck"}) == []
+    stt = make_stt(cfg, {"DEEPGRAM_API_KEY": "dg"})
+    assert type(stt).__name__ == "DeepgramSTT" and stt.api_key == "dg" and stt.model == "nova-3"
+    cfg2 = deep_merge(cfg, {"stt": {"deepgram": {"model": "nova-2"}}})
+    assert make_stt(cfg2, {"DEEPGRAM_API_KEY": "dg"}).model == "nova-2"
+    tts = make_tts(cfg, {"CARTESIA_API_KEY": "ck"})
+    assert type(tts).__name__ == "CartesiaTTS" and tts.voice_id == "v"
+    with pytest.raises(ConfigError, match="voice id"):
+        make_tts(deep_merge(cfg, {"tts": {"voice": ""}}), {"CARTESIA_API_KEY": "ck"})
+    with pytest.raises(ConfigError, match="unknown speech-to-text provider 'nope'"):
+        make_stt(deep_merge(cfg, {"stt": {"provider": "nope"}}), {})
 
 
 def test_state_dir_and_slug(tmp_path):

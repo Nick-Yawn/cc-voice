@@ -9,8 +9,9 @@ import sys
 
 from cc_voice import __version__
 from cc_voice.app import Host, run_text
-from cc_voice.config import api_keys, child_env, load_config
+from cc_voice.config import child_env, load_config
 from cc_voice.contract import write_contract
+from cc_voice.providers.registry import ConfigError, make_stt, make_tts, missing_keys
 from cc_voice.seat import Seat
 from cc_voice.spoken_log import SpokenLog
 from cc_voice.state import EventLog, LockFile, SessionPin, kill_group, state_dir
@@ -114,18 +115,17 @@ def main(argv: list[str] | None = None) -> int:
         runner = run_text(host)
     else:
         from cc_voice.voice import run_voice
-        keys = api_keys()
-        missing = [name for name, key in (("DEEPGRAM_API_KEY", keys["deepgram"]),
-                                          ("CARTESIA_API_KEY", keys["cartesia"])) if not key]
-        if missing:
-            print(f"cc-voice: voice mode needs {' and '.join(missing)} in the"
-                  f" environment (or run with --text)", file=sys.stderr)
+        try:
+            missing = missing_keys(cfg)
+            if missing:
+                print(f"cc-voice: voice mode needs {' and '.join(missing)} in the"
+                      f" environment (or run with --text)", file=sys.stderr)
+                return 2
+            stt, tts = make_stt(cfg), make_tts(cfg)
+        except ConfigError as exc:
+            print(f"cc-voice: {exc}", file=sys.stderr)
             return 2
-        if not cfg["tts"]["voice"]:
-            print("cc-voice: set a Cartesia voice id: [tts] voice = \"...\" in"
-                  " ~/.config/cc-voice/config.toml, or --voice ID", file=sys.stderr)
-            return 2
-        runner = run_voice(host, seat, cfg, keys)
+        runner = run_voice(host, seat, cfg, stt=stt, tts=tts)
 
     async def run():
         loop = asyncio.get_running_loop()

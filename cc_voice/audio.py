@@ -9,7 +9,7 @@ thread reaches it, which is how the player awaits "played out".
 
 Mic: a RawInputStream whose callback hands PCM16 frames to the loop.
 The frame-starvation watchdog (watchdog_tick, pure) notices a wedged or
-changed device long before the STT vendor's own keepalive would.
+changed device without any help from the speech vendor.
 """
 
 import asyncio

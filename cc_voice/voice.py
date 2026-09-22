@@ -334,14 +334,10 @@ class VoiceFront:
             self._out("[session closed]")
 
 
-async def run_voice(host: Host, seat, cfg: dict, keys: dict, *, stt=None, tts=None,
+async def run_voice(host: Host, seat, cfg: dict, *, stt, tts,
                     playback: Playback | None = None, mic: Mic | None = None) -> None:
-    if stt is None:
-        from cc_voice.providers.deepgram import DeepgramSTT
-        stt = DeepgramSTT(keys["deepgram"], model=cfg["stt"]["model"])
-    if tts is None:
-        from cc_voice.providers.cartesia import CartesiaTTS
-        tts = CartesiaTTS(keys["cartesia"], cfg["tts"]["voice"], model=cfg["tts"]["model"])
+    """The providers arrive built (providers/registry.py): nothing in the
+    voice loop knows which vendor is listening or speaking."""
     if playback is None:
         playback = Playback(enabled=True, device=cfg["audio"].get("output_device"),
                             rate=tts.sample_rate)

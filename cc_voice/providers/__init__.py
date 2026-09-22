@@ -8,6 +8,13 @@ must provide. Partials drive the live pane and pause-while-talking.
 Word timings make the closer rule exact where they exist. Native turn
 events power inferred mode (opt-in, not built in this version).
 
+close() is graceful: the adapter asks the vendor to flush whatever audio
+it still holds into Finals, lets them reach events(), and only then
+closes the socket, within a bound of a couple of seconds. The core
+closes a session after every utterance, so the last word of one must
+survive the close. Every vendor detail (message names, timeouts,
+keep-alives, close handshakes) lives inside the adapter.
+
 Text to speech: speak(text, voice=...) is an async iterator of PCM16
 mono bytes at `sample_rate`; stop iterating to cancel. The core handles
 volume; the adapter only turns text into audio. There is no speed
@@ -83,7 +90,7 @@ STTEvent = Partial | Final | SpeechStarted | TurnEnd | TurnResumed | Error
 class STTSession(Protocol):
     async def send(self, pcm16: bytes) -> None: ...
     def events(self) -> AsyncIterator[STTEvent]: ...
-    async def close(self) -> None: ...
+    async def close(self) -> None: ...  # graceful: flush, then close (see above)
 
 
 @runtime_checkable

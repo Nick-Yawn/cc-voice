@@ -121,6 +121,8 @@ def test_deepgram_session_streams_events_and_closes():
         assert events == [Partial("hel"), Final("hello", None, False)]
         await session.close()
         assert ws.closed and json.loads(ws.sent[-1]) == {"type": "CloseStream"}
+        await session.close()  # idempotent
+        assert ws.sent.count(json.dumps({"type": "CloseStream"})) == 1
 
     asyncio.run(scenario())
 

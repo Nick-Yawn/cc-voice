@@ -1,9 +1,10 @@
 """Configuration: defaults, ~/.config/cc-voice/config.toml, a project's
 .cc-voice.toml overlay, and the API keys from the environment.
 
-Keys never live in the config file. They are read from DEEPGRAM_API_KEY
-and CARTESIA_API_KEY and removed from the child claude's environment:
-the agent runs shell commands and has no need to see them.
+Keys never live in the config file. Each provider names the environment
+variable it needs (providers/registry.py); every key any provider could
+use is removed from the child claude's environment, because the agent
+runs shell commands and has no need to see them.
 """
 
 import copy
@@ -11,18 +12,16 @@ import os
 import tomllib
 from pathlib import Path
 
+from cc_voice.providers.registry import KEY_ENV_VARS
+
 USER_CONFIG_PATH = Path("~/.config/cc-voice/config.toml")
 PROJECT_CONFIG_NAME = ".cc-voice.toml"
-
-DEEPGRAM_KEY_ENV = "DEEPGRAM_API_KEY"
-CARTESIA_KEY_ENV = "CARTESIA_API_KEY"
-KEY_ENV_VARS = (DEEPGRAM_KEY_ENV, CARTESIA_KEY_ENV)
 
 DEFAULTS: dict = {
     "stt": {
         "provider": "deepgram",
-        "model": "nova-3",
         "language": "en",
+        "deepgram": {"model": "nova-3"},
     },
     "tts": {
         "provider": "cartesia",
@@ -85,12 +84,6 @@ def load_config(project_dir: str | os.PathLike | None = None,
     if project_dir is not None:
         cfg = deep_merge(cfg, _read_toml(Path(project_dir) / PROJECT_CONFIG_NAME))
     return cfg
-
-
-def api_keys(environ: dict | None = None) -> dict[str, str | None]:
-    env = os.environ if environ is None else environ
-    return {"deepgram": env.get(DEEPGRAM_KEY_ENV) or None,
-            "cartesia": env.get(CARTESIA_KEY_ENV) or None}
 
 
 def child_env(environ: dict | None = None,

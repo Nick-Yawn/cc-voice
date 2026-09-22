@@ -84,8 +84,7 @@ def build(tmp_path, answers, overlay=None, tts=None):
     stream = FakeOutStream()
     playback = Playback(enabled=True, open_stream=lambda: stream)
     mic = FakeMic()
-    keys = {"deepgram": "dg", "cartesia": "ck"}
-    run = asyncio.ensure_future(run_voice(host, seat, cfg, keys, stt=stt, tts=tts,
+    run = asyncio.ensure_future(run_voice(host, seat, cfg, stt=stt, tts=tts,
                                           playback=playback, mic=mic))
     return host, seat, claude, stt, tts, stream, mic, out, run
 
@@ -229,7 +228,7 @@ def test_stt_link_drop_reconnects_with_the_cue_pair(tmp_path):
     async def scenario():
         host, seat, claude, stt, tts, stream, mic, out, run = build(tmp_path, {})
         await until(lambda: len(stt.sessions) == 1)
-        stt.queue.put_nowait(Error("deepgram link: 1011"))
+        stt.queue.put_nowait(Error("link: server closed 1011"))
         await until(lambda: len(stt.sessions) == 2)
         await until(lambda: cue_names(stream).count("connected") == 2)
         assert cue_names(stream).count("disconnected") == 1
