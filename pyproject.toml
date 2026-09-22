@@ -25,6 +25,7 @@ classifiers = [
 dependencies = [
     "sounddevice>=0.5",
     "websockets>=13",
+    "webrtcvad-wheels>=2.0.14",
 ]
 
 [project.optional-dependencies]

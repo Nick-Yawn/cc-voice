@@ -7,29 +7,42 @@ from cc_voice.providers import STTCaps, TTSCaps
 
 
 class FakeSTTSession:
+    """Reads the STT's shared event queue while open. close() ends
+    events() without touching the queue, so a session closed unread (the
+    gate's startup probe, a hangover close) never eats the next one's
+    events."""
+
     def __init__(self, queue: asyncio.Queue):
         self.queue = queue
         self.bytes_sent = 0
+        self.chunks: list[bytes] = []
         self.closed = False
-        self._ended = False
+        self._closed = asyncio.Event()
 
     async def send(self, pcm16: bytes) -> None:
         self.bytes_sent += len(pcm16)
+        self.chunks.append(pcm16)
 
     async def events(self):
+        closed = asyncio.ensure_future(self._closed.wait())
         try:
-            while True:
-                ev = await self.queue.get()
-                if ev is None:
+            while not self._closed.is_set():
+                getter = asyncio.ensure_future(self.queue.get())
+                done, _ = await asyncio.wait({getter, closed},
+                                             return_when=asyncio.FIRST_COMPLETED)
+                if getter not in done:
+                    getter.cancel()
                     return
+                ev = getter.result()
+                if ev is None:
+                    return  # a link drop
                 yield ev
         finally:
-            self._ended = True
+            closed.cancel()
 
     async def close(self) -> None:
         self.closed = True
-        if not self._ended:
-            self.queue.put_nowait(None)  # wake a waiting events() only
+        self._closed.set()
 
 
 class FakeSTT:
@@ -50,6 +63,15 @@ class FakeSTT:
         session = FakeSTTSession(self.queue)
         self.sessions.append(session)
         return session
+
+
+class FakeVAD:
+    """Speech is any frame whose first byte is not zero."""
+
+    frame_bytes = 640  # 20 ms at 16 kHz
+
+    def is_speech(self, frame: bytes) -> bool:
+        return len(frame) == self.frame_bytes and frame[0] != 0
 
 
 class FakeTTS:

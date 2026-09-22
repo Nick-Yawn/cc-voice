@@ -9,7 +9,7 @@ from cc_voice.app import Host
 from cc_voice.audio import Playback
 from cc_voice.config import DEFAULTS, deep_merge
 from cc_voice.providers import Error, Final, Partial, SpeechStarted
-from cc_voice.providers.fake import FakeSTT, FakeTTS
+from cc_voice.providers.fake import FakeSTT, FakeTTS, FakeVAD
 from cc_voice.seat import Seat
 from cc_voice.state import EventLog, LockFile, SessionPin
 from cc_voice.voice import run_voice
@@ -36,6 +36,10 @@ class FakeOutStream:
         pass
 
 
+VOICED = b"\x01\x00" * 640   # 40 ms the FakeVAD calls speech
+SILENT = bytes(1280)
+
+
 class FakeMic:
     rate = 16000
 
@@ -44,6 +48,7 @@ class FakeMic:
         self.started = 0
         self.stopped = 0
         self.on_frame = None
+        self.device_name = "fake mic"
 
     def start(self, loop, on_frame):
         self.started += 1
@@ -51,6 +56,16 @@ class FakeMic:
 
     def stop(self):
         self.stopped += 1
+        self.on_frame = None
+
+
+async def keep_talking(mic: FakeMic, run: asyncio.Future) -> None:
+    """Voice on the mic for the whole test, so the gate opens at once
+    and stays open; the gate's own timing has its own tests."""
+    while not run.done():
+        if mic.on_frame is not None:
+            mic.on_frame(VOICED)
+        await asyncio.sleep(0.01)
 
 
 CUES = earcons.get_set()
@@ -69,7 +84,9 @@ def cue_names(stream: FakeOutStream) -> list[str]:
 def build(tmp_path, answers, overlay=None, tts=None):
     cfg = deep_merge(DEFAULTS, {"turns": {"closer_settle_s": 0.03},
                                 "volumes": {"earcons": 1.0},
-                                "seat": {"still_here_s": 60}, **(overlay or {})})
+                                "seat": {"still_here_s": 60},
+                                "gate": {"hangover_s": 60, "empty_hangover_s": 60,
+                                         "deaf_s": 0}, **(overlay or {})})
     out = []
     host = Host(cfg, "/proj", log=EventLog(tmp_path / "log.jsonl"), out=out.append)
     claude = ScriptedClaude(answers)
@@ -85,7 +102,8 @@ def build(tmp_path, answers, overlay=None, tts=None):
     playback = Playback(enabled=True, open_stream=lambda: stream)
     mic = FakeMic()
     run = asyncio.ensure_future(run_voice(host, seat, cfg, stt=stt, tts=tts,
-                                          playback=playback, mic=mic))
+                                          playback=playback, mic=mic, vad=FakeVAD()))
+    mic.talker = asyncio.ensure_future(keep_talking(mic, run))
     return host, seat, claude, stt, tts, stream, mic, out, run
 
 
@@ -229,12 +247,14 @@ def test_readdress_after_a_gap_discards_with_the_falling_tone(tmp_path):
 def test_stt_link_drop_reconnects_with_the_cue_pair(tmp_path):
     async def scenario():
         host, seat, claude, stt, tts, stream, mic, out, run = build(tmp_path, {})
-        await until(lambda: len(stt.sessions) == 1)
+        # the startup probe is session 1; the voice opens session 2
+        await until(lambda: len(stt.sessions) == 2 and stt.sessions[0].closed)
         stt.queue.put_nowait(Error("link: server closed 1011"))
-        await until(lambda: len(stt.sessions) == 2)
+        await until(lambda: len(stt.sessions) == 3)  # the gate reopened it
         await until(lambda: cue_names(stream).count("connected") == 2)
         assert cue_names(stream).count("disconnected") == 1
-        assert mic.started == 2 and mic.stopped >= 1
+        assert mic.started == 1  # a link drop never touches the microphone
+        assert stt.sessions[2].chunks  # audio flows into the new session
         stt.queue.put_nowait(Final("Operator quit"))
         await run
 

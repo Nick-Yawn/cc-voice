@@ -1,12 +1,14 @@
 """The voice front end.
 
-  mic -> STT session -> TurnMachine -> Host (Seat)
+  mic -> Gate (local VAD; the STT session exists only while you talk)
+      -> TurnMachine -> Host (Seat)
   Seat events -> SpokenLog -> TTS -> Playback (speaker)
 
-Plus the earcons, the closer's settle window, pause-while-talking, the
-mic-starvation watchdog, and STT reconnects. Every piece of audio
-hardware and every vendor is injectable, so the whole loop runs offline
-in tests with fake providers.
+Plus the earcons, the closer's settle window, pause-while-talking, and
+the mic-starvation watchdog. The gate owns the speech-to-text session:
+its opens, its flushes, its reconnects. Every piece of audio hardware
+and every vendor is injectable, so the whole loop runs offline in tests
+with fake providers.
 """
 
 import asyncio
@@ -17,13 +19,14 @@ import time
 from cc_voice.app import Host
 from cc_voice.audio import MIC_RATE, Mic, Playback, watchdog_tick
 from cc_voice.earcons import get_set
-from cc_voice.providers import Error, Final, Partial, SpeechStarted, TurnEnd
+from cc_voice.gate import Gate
+from cc_voice.providers import Final, Partial, SpeechStarted, TurnEnd
 from cc_voice.scrub import Scrubber
 from cc_voice.spoken_log import SpokenLog
 from cc_voice.text import Respeller
 from cc_voice.turns import TurnMachine
+from cc_voice.vad import make_vad
 
-_REBUILD = object()  # a frame-queue sentinel: end this STT pass cleanly
 MIC_CONSTRUCT_MAX_FAILURES = 5
 WATCHDOG_INTERVAL_S = 2.0
 ABANDON_INTERVAL_S = 5.0
@@ -58,7 +61,7 @@ def make_speaker(tts, playback: Playback, scrubber: Scrubber, respell: Respeller
 
 class VoiceFront:
     def __init__(self, host: Host, cfg: dict, *, stt, tts, playback: Playback, mic: Mic,
-                 clock=time.monotonic):
+                 vad=None, clock=time.monotonic):
         self.host = host
         self.cfg = cfg
         self.stt = stt
@@ -82,11 +85,29 @@ class VoiceFront:
         self.earcon_gain = float(cfg["volumes"].get("earcons", 1.0))
         self.link_up = False
         self._settle: asyncio.Task | None = None
-        self.frames_q: asyncio.Queue | None = None
         self.pass_start = clock()
         self._tasks: list[asyncio.Task] = []
+        self._rebuild = asyncio.Event()
+        self._rebuild_reason: str | None = None
+        gate_cfg = cfg.get("gate") or {}
+        self.vad = vad or make_vad(mic.rate, gate_cfg)
+        self.gate = Gate(
+            self._open_session, self.on_stt_event, vad=self.vad, rate=mic.rate,
+            pre_roll_s=float(gate_cfg.get("pre_roll_s", 0.5)),
+            hangover_s=float(gate_cfg.get("hangover_s", 10.0)),
+            empty_hangover_s=float(gate_cfg.get("empty_hangover_s", 2.0)),
+            deaf_s=float(gate_cfg.get("deaf_s", 8.0)),
+            hold=lambda: self.machine.state != TurnMachine.IDLE,
+            on_link=self._gate_link,
+            on_deaf=lambda: self.request_rebuild("voice but no words, twice"),
+            out=self._out, log=host.log.write, clock=clock)
         host.status_extra = self.status_extra
         host.on_still_here = lambda: self.cue("still_here")
+
+    async def _open_session(self):
+        return await self.stt.open(rate=self.mic.rate,
+                                   keyterms=[self.address, self.closer],
+                                   language=self.language)
 
     # -- cues ------------------------------------------------------------------
 
@@ -99,6 +120,16 @@ class VoiceFront:
         self.link_up = up
         self.cue("connected" if up else "disconnected")
         self.host.log.write("link", up=up)
+
+    def _gate_link(self, up: bool, detail: str | None = None) -> None:
+        if detail:
+            self._out(f"[ears: {detail}]")
+        self._link(up)
+
+    def request_rebuild(self, reason: str) -> None:
+        """Ask the ears loop to stop and restart the input device."""
+        self._rebuild_reason = reason
+        self._rebuild.set()
 
     def status_extra(self) -> dict:
         t = self.mic.last_frame_t
@@ -216,70 +247,46 @@ class VoiceFront:
 
     # -- the ears --------------------------------------------------------------------
 
-    async def _pump(self, frames_q: asyncio.Queue, session) -> None:
-        while True:
-            chunk = await frames_q.get()
-            if chunk is _REBUILD:
-                await session.close()
-                return
-            await session.send(chunk)
-
     async def ears(self) -> None:
+        """The link check, then the mic feeding the gate; the loop only
+        turns when a rebuild is requested (the watchdog, a deaf gate)."""
         loop = asyncio.get_running_loop()
         quitting = self.host.quitting
         backoff = 1.0
+        while not quitting.is_set():
+            try:
+                await self.gate.probe()
+                break
+            except Exception as exc:
+                self._out(f"[ears: speech-to-text link failed ({exc!r});"
+                          f" retrying in {backoff:.0f}s]")
+                self._link(False)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30.0)
+        self._link(True)
         mic_failures = 0
         while not quitting.is_set():
-            frames_q: asyncio.Queue = asyncio.Queue()
-            self.frames_q = frames_q
             self.pass_start = self._clock()
             try:
-                self.mic.start(loop, frames_q.put_nowait)
+                self.mic.start(loop, self.gate.feed)
             except Exception as exc:
                 mic_failures += 1
                 self._out(f"[ears: mic failed ({exc!r}); retrying]")
+                self.host.log.write("mic", state="failed", error=repr(exc)[:200])
                 self.mic.stop()
                 if mic_failures >= MIC_CONSTRUCT_MAX_FAILURES:
                     raise
                 await asyncio.sleep(1.0)
                 continue
             mic_failures = 0
-            try:
-                session = await self.stt.open(rate=self.mic.rate,
-                                              keyterms=[self.address, self.closer],
-                                              language=self.language)
-            except Exception as exc:
-                self._out(f"[ears: speech-to-text link failed ({exc!r});"
-                          f" retrying in {backoff:.0f}s]")
-                self.mic.stop()
-                self._link(False)
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 30.0)
-                continue
-            backoff = 1.0
-            self._link(True)
-            pump = asyncio.ensure_future(self._pump(frames_q, session))
-            try:
-                async for ev in session.events():
-                    if quitting.is_set():
-                        break
-                    if isinstance(ev, Error):
-                        self._out(f"[ears: {ev.message}; reconnecting]")
-                        break
-                    self.on_stt_event(ev)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                self._out(f"[ears: transcription dropped ({exc!r}); reconnecting]")
-            finally:
-                pump.cancel()
-                await asyncio.gather(pump, return_exceptions=True)
-                with contextlib.suppress(Exception):
-                    await session.close()
-                self.mic.stop()
-            if not quitting.is_set():
-                self._link(False)
-                await asyncio.sleep(0.5)
+            self.host.log.write("mic", state="started",
+                                device=getattr(self.mic, "device_name", None),
+                                rate=self.mic.rate)
+            self._rebuild.clear()
+            await self._rebuild.wait()
+            self.mic.stop()
+            self.host.log.write("mic", state="rebuilding", reason=self._rebuild_reason)
+            await asyncio.sleep(0.2)
 
     async def watchdog(self) -> None:
         down, down_since = False, None
@@ -289,10 +296,12 @@ class VoiceFront:
                 self.mic.last_frame_t, self.pass_start, down, down_since, self._clock())
             if event == "down":
                 self._out("[ears: no mic frames; rebuilding the microphone]")
+                self.host.log.write("watchdog", event="mic_down")
             elif event == "up":
                 self._out("[ears: mic frames back]")
-            if starved_now and self.frames_q is not None:
-                self.frames_q.put_nowait(_REBUILD)
+                self.host.log.write("watchdog", event="mic_up")
+            if starved_now:
+                self.request_rebuild("no mic frames")
 
     async def abandon_ticker(self) -> None:
         while True:
@@ -331,14 +340,16 @@ class VoiceFront:
             for t in self._tasks:
                 t.cancel()
             await asyncio.gather(*self._tasks, return_exceptions=True)
-            await host.shutdown()
             self.mic.stop()
+            await self.gate.stop()
+            await host.shutdown()
             self.playback.stop()
             self._out("[session closed]")
 
 
 async def run_voice(host: Host, seat, cfg: dict, *, stt, tts,
-                    playback: Playback | None = None, mic: Mic | None = None) -> None:
+                    playback: Playback | None = None, mic: Mic | None = None,
+                    vad=None) -> None:
     """The providers arrive built (providers/registry.py): nothing in the
     voice loop knows which vendor is listening or speaking."""
     if playback is None:
@@ -354,5 +365,5 @@ async def run_voice(host: Host, seat, cfg: dict, *, stt, tts,
     speak = make_speaker(tts, playback, scrubber, respell, cfg["volumes"],
                          cfg["tts"].get("voice") or None)
     host.bind(seat, SpokenLog(speak))
-    front = VoiceFront(host, cfg, stt=stt, tts=tts, playback=playback, mic=mic)
+    front = VoiceFront(host, cfg, stt=stt, tts=tts, playback=playback, mic=mic, vad=vad)
     await front.run()

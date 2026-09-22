@@ -38,6 +38,13 @@ DEFAULTS: dict = {
         "readdress_gap_s": 2.0,   # quiet before a new address discards a turn
         "idle_turn_s": 60.0,      # an open turn with no closer expires
     },
+    "gate": {                     # the speech-to-text socket exists only while you talk
+        "pre_roll_s": 0.5,        # audio kept before the onset and sent on connect
+        "hangover_s": 10.0,       # quiet after words before the socket closes
+        "empty_hangover_s": 2.0,  # quiet before it closes when nothing was heard
+        "deaf_s": 8.0,            # voice with no words: reconnect (twice: rebuild the mic)
+        "vad_aggressiveness": 2,  # 0 permissive .. 3 strict
+    },
     "volumes": {
         "speech": 1.0,
         "narration": 0.5,
