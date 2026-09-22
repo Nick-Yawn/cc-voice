@@ -1,0 +1,114 @@
+import json
+import os
+
+from earshot import config as cfgmod
+from earshot.config import api_keys, child_env, deep_merge, load_config
+from earshot.contract import contract_text, write_contract
+from earshot.state import (
+    EventLog,
+    LockFile,
+    SessionPin,
+    is_claude_process,
+    project_slug,
+    state_dir,
+)
+
+
+def test_defaults_and_overlays(tmp_path):
+    user = tmp_path / "config.toml"
+    user.write_text('[words]\naddress = "computer"\n[volumes]\nnarration = 0.3\n')
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / ".earshot.toml").write_text('[words]\ncloser = "send"\n[tts]\nvoice = "v1"\n')
+    cfg = load_config(proj, user_path=user)
+    assert cfg["words"] == {"address": "computer", "closer": "send",
+                            "filler_before_address": False}
+    assert cfg["volumes"]["narration"] == 0.3 and cfg["volumes"]["speech"] == 1.0
+    assert cfg["tts"]["voice"] == "v1" and cfg["tts"]["provider"] == "cartesia"
+    assert cfg["seat"]["claude_args"] == []
+    # missing files are simply defaults
+    assert load_config(tmp_path / "nowhere", user_path=tmp_path / "none.toml") == cfgmod.DEFAULTS
+    assert deep_merge({"a": {"b": 1, "c": 2}}, {"a": {"b": 9}, "d": 3}) == \
+        {"a": {"b": 9, "c": 2}, "d": 3}
+
+
+def test_keys_come_from_env_and_leave_the_child_env():
+    env = {"DEEPGRAM_API_KEY": "dg", "CARTESIA_API_KEY": "ck", "PATH": "/bin",
+           "HOME": "/home/x"}
+    assert api_keys(env) == {"deepgram": "dg", "cartesia": "ck"}
+    assert child_env(env) == {"PATH": "/bin", "HOME": "/home/x"}
+    assert api_keys({}) == {"deepgram": None, "cartesia": None}
+
+
+def test_state_dir_and_slug(tmp_path):
+    proj = tmp_path / "My Project"
+    proj.mkdir()
+    slug = project_slug(proj)
+    assert slug.startswith("My-Project-") and len(slug.split("-")[-1]) == 8
+    d = state_dir(proj, root=tmp_path / "state")
+    assert d.is_dir() and d.parent.name == "projects"
+    assert state_dir(proj, root=tmp_path / "state") == d
+
+
+def test_session_pin_roundtrip(tmp_path):
+    pin = SessionPin(tmp_path / "session_id")
+    assert pin.load() is None
+    pin.save("abc")
+    assert pin.load() == "abc"
+    pin.clear()
+    assert pin.load() is None
+    pin.clear()  # idempotent
+
+
+def test_event_log_is_private_and_appends(tmp_path):
+    log = EventLog(tmp_path / "log.jsonl")
+    log.write("heard", text="hello")
+    log.write("sent", text="more", obj={"a": 1})
+    mode = os.stat(log.path).st_mode & 0o777
+    assert mode == 0o600
+    rows = [json.loads(l) for l in log.path.read_text().splitlines()]
+    assert [r["ev"] for r in rows] == ["heard", "sent"]
+    assert rows[0]["text"] == "hello" and "ts" in rows[0]
+    EventLog(None).write("noop")  # disabled log never raises
+
+
+def test_lock_holder_and_stray_child(tmp_path):
+    lock = LockFile(tmp_path / "lock")
+    assert lock.read() is None and lock.holder() is None and lock.stray_child() is None
+    lock.acquire("sid", pid=os.getpid())
+    lock.set_child(4321)
+    assert lock.read() == {**lock.read(), "pid": os.getpid(), "child_pid": 4321,
+                           "session_id": "sid"}
+    # our own pid never reads as another holder
+    assert lock.holder() is None
+    # a live other host holds it
+    lock.acquire("sid", pid=99999)
+    assert lock.holder(alive=lambda pid: pid == 99999) == 99999
+    assert lock.holder(alive=lambda pid: False) is None
+    # a dead host with a live claude child: a stray
+    lock.set_child(4321)
+    assert lock.stray_child(alive=lambda pid: pid == 4321, is_claude=lambda pid: True) == 4321
+    assert lock.stray_child(alive=lambda pid: pid == 4321, is_claude=lambda pid: False) is None
+    # a live host's child is not ours to touch
+    assert lock.stray_child(alive=lambda pid: True, is_claude=lambda pid: True) is None
+    lock.release()
+    assert lock.read() is None
+    lock.release()
+
+
+def test_is_claude_process_reads_the_command_line():
+    assert is_claude_process(1, command=lambda pid: "/usr/local/bin/claude -p --verbose")
+    assert not is_claude_process(1, command=lambda pid: "python3 something.py")
+    assert not is_claude_process(1, command=lambda pid: "")
+
+
+def test_contract_is_written_once_and_names_the_block(tmp_path):
+    text = contract_text()
+    assert "⟦voice⟧" in text and "⟦/voice⟧" in text
+    path = write_contract(tmp_path)
+    assert path.read_text(encoding="utf-8") == text
+    mtime = path.stat().st_mtime_ns
+    assert write_contract(tmp_path) == path
+    assert path.stat().st_mtime_ns == mtime  # unchanged content, no rewrite
+    custom = write_contract(tmp_path, "custom")
+    assert custom.read_text() == "custom"
