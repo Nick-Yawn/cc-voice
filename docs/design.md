@@ -10,10 +10,10 @@ Status: a proposal for Nick to react to, not a spec. Written 2026-09-22 from the
 
 **Goals**
 
-- An ordinary Claude Code user (Nick's buddy first) installs one package, adds two API keys, runs `cc-voice` in a project folder, and codes by voice.
+- An ordinary Claude Code user (Nick's buddy first) installs one package, adds one API key, runs `cc-voice` in a project folder, and codes by voice.
 - It drives the user's own installed `claude`. cc-voice never handles the Claude login.
 - Two output channels. The full answer appears in the terminal, and a short spoken summary is played aloud.
-- Speech providers can be swapped. Deepgram (speech to text) and Cartesia (text to speech) are the defaults.
+- Speech providers can be swapped. Cartesia is the default for both speech to text (Ink) and text to speech (Sonic), so one key is enough; Deepgram is an option for speech to text.
 - The Cortana loop's lessons ship as defaults, so nobody has to relearn them.
 
 **Non-goals**
@@ -27,7 +27,7 @@ Status: a proposal for Nick to react to, not a spec. Written 2026-09-22 from the
 
 ## 2. What using it feels like
 
-**Start.** Run `cc-voice` in a project folder. It asks which session to resume (or starts a new one), plays a rising chime when the mic and link are up, and shows a live transcript pane.
+**Start.** Run `cc-voice` in a project folder. It asks which session to resume (or starts a new one), plays a rising chime when the mic is up and the speech link has answered a probe, and shows a live transcript pane.
 
 **Open a turn.** Say the address word ("operator" by default), then talk. Anything said without it is ignored. **Learned in use:** in session one, OS dictation typed a stranger's "are you still at church?" into the terminal. A soft tick confirms that the turn opened.
 
@@ -68,8 +68,8 @@ The closer counts only at the **end** of what you say: the word, then about 400 
 **Recommendation: one Python host process that drives one persistent `claude -p` child over stream-json.**
 
 ```
-   mic ──► [STT provider] ──► TurnMachine  (address, closer, commands)
-                                   │
+   mic ──► Gate (local VAD) ──► [STT provider] ──► TurnMachine  (address, closer, commands)
+                                                       │
    ┌────────────── cc-voice host (asyncio) ──────────────────┐
    │  Seat: claude -p --input-format stream-json            │
    │        --output-format stream-json --verbose           │
@@ -83,6 +83,7 @@ The closer counts only at the **end** of what you say: the word, then about 400 
    terminal pane (full text)    SpokenLog cursor ──► [TTS provider] ──► speaker
 ```
 
+- **The gate.** The speech-to-text socket exists only while someone talks. A local VAD (WebRTC's) in the core watches the mic; at a speech onset the gate opens a session, flushes the last half second from a ring so the address word survives the connect, and streams live. Ten seconds after the last words (two, if the session heard none), unless the TurnMachine holds a turn open, it closes the session gracefully, which flushes the vendor's last finals. Reconnect after a server close is automatic while the voice continues. Why: idle sockets count against a vendor's concurrency limit, vendors close idle sockets on their own clocks, and an open mic all day would burn a plan's included hours. Nothing above the gate knows which vendor is listening.
 - **One process per session.** It is spawned on the first turn and resumed from a session id pinned on disk. It closes after 30 idle minutes and respawns on the next turn. Each message goes to stdin the moment it's heard.
 - **An ordered channel.** Words go in and output comes out, in order, with no turn tracking. **Learned in use:** Cortana first matched each output record to the turn that caused it, and every hard bug of the first live nights lived in that matching.
 - **The Translator** is a pure function over stream records. It computes the context percent from the *last* usage iteration. **Learned in use:** the top-level usage adds up every round and once reported "108 percent". It skips subagent records (those with a `parent_tool_use_id`). **Learned in use:** without that, about 50 "Running a command." lines were spoken in a row.
@@ -158,8 +159,9 @@ Word = (text, start_s, end_s, confidence)
 ```
 
 - **Finals** are the minimum an adapter must provide. They feed the TurnMachine.
+- **`close()` is graceful.** The adapter flushes the vendor's buffered audio into Finals before the socket closes, because the gate closes a session after every utterance. Every vendor detail (message names, timeouts, keep-alives, close handshakes) stays inside the adapter; the registry (`providers/registry.py`) is the one place that knows which vendors exist and which key each needs.
 - **Partials** drive the live pane and let pause-while-talking react early.
-- **Word timings** make the closer rule exact: "over" counts only if silence follows the word's end. Without them, the core falls back to a timer.
+- **Word timings** make the closer rule exact: "over" counts only if silence follows the word's end. Without them, the core falls back to a timer. Measured 2026-09-22: Cartesia Ink-2 returns none over the manual endpoint (ink-whisper does); Deepgram Nova-3 returns them.
 - **Native turn events** power inferred mode. Without them, the core runs its own silence-based endpointer.
 - **Keyterms** boost the address and closer words. **Learned in use:** the address word became reliable only once it was boosted. `cc-voice setup` warns when an adapter can't boost.
 - **Non-streaming engines** (local Whisper, upload APIs) get a local VAD that cuts speech into segments and emits Finals.
@@ -180,8 +182,9 @@ class TTS(Protocol):
 
 | | Speech to text | Text to speech |
 |---|---|---|
-| Default | Deepgram Nova-3 streaming (Flux for inferred turns) | Cartesia Sonic 3.6 |
-| Cloud | Cartesia Ink 2, OpenAI realtime transcription, ElevenLabs Scribe | OpenAI TTS, ElevenLabs |
+| Default | Cartesia Ink 2, manual endpoint (finals only; the turn-detecting endpoint is the seam for inferred mode) | Cartesia Sonic 3.6 |
+| Option, built | Deepgram Nova-3 streaming (partials, word timings; Flux for inferred turns) | |
+| Cloud | OpenAI realtime transcription, ElevenLabs Scribe | OpenAI TTS, ElevenLabs |
 | Local, no key | faster-whisper / whisper.cpp + VAD | macOS `say`, Piper, Kokoro |
 
 ---
@@ -257,8 +260,8 @@ Each of these is real in the private loop: still open there, or fixed late at so
    → *Day one:* the closer word is the default mode, and it works in inferred mode too.
 9. **Self-hearing.** An open mic heard about 30 of the loop's own lines in one session.
    → *Day one:* all speech is scrubbed. The address word is clipped to "op" and a bare "over" to "ov", so cc-voice's own audio can never open, close or command anything. Headphones are recommended. On speakers, a transcript that matches what was just played is dropped as echo. Real echo cancellation is v1.x.
-10. **Going deaf after playback.** Audio kept flowing, but no transcripts came back and no error was raised.
-    → *Day one:* two watchdogs. One rebuilds the mic stream when frames stop. The other restarts the STT session when speech energy arrives with no transcript.
+10. **Going deaf after playback.** Audio kept flowing, but no transcripts came back and no error was raised. **Learned in use** (2026-09-22): a Bluetooth headset's mic went silent for 43 s after a compaction, with frames still flowing.
+    → *Day one:* the mic is opened at the device's own rate (re-queried at every start, resampled locally) and two watchdogs run. One rebuilds the mic when frames stop or stay digital silence. The other, in the gate, reconnects the STT session after eight seconds of voiced audio with no words, and rebuilds the mic if that happens twice. The log names the device and every firing.
 11. **Interrupting a running query.** This was never built, because the control message looked undocumented.
     → *Probe first.* The Agent SDK's `interrupt()` uses that same channel. A version-pinned probe test decides whether it goes into v1.
 12. **Re-addressing your own open turn.** It appended, which Nick called odd.
@@ -286,6 +289,7 @@ The name is **cc-voice** (Nick, 2026-09-22): "cc" for Claude Code, without putti
 
 ## 12. Rulings (Nick, 2026-09-22)
 
+- **One key.** People will have the patience for one key, not two: Cartesia does speech to text by default, and Deepgram stays an option. Making that swap is "the first step of our dependency inversion": the provider seam was audited so that nothing above the adapters knows which vendor listens.
 - **Terms:** not a blocker. Go ahead; if Anthropic objects, they'll say so.
 - **Turn ending:** "over" is the default closer, and inferred ending is opt-in.
 - **Permissions:** build voice allow/deny and judge it live (§7).

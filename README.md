@@ -3,6 +3,8 @@
 A voice interface for Claude Code. You talk to your coding agent, and it
 talks back.
 
+One key: Cartesia does both the listening and the speaking.
+
 Run `cc-voice` in a project folder. Say the address word ("operator"),
 talk, and end with "over". Your words go to your own installed `claude`
 as a message. The full answer appears in the terminal, and a short
@@ -30,11 +32,14 @@ open questions.
   deliver silence instead of stopping. cc-voice opens the device at
   its own rate, watches for frames that stop or go silent, and
   rebuilds the input when they do; the log names the device it opened.
-- For voice mode, two API keys:
-  - [Deepgram](https://deepgram.com) for speech to text (`DEEPGRAM_API_KEY`).
-  - [Cartesia](https://cartesia.ai) for text to speech (`CARTESIA_API_KEY`),
-    plus the id of a Cartesia voice (pick one in their playground and
-    copy its id).
+- For voice mode, one API key: [Cartesia](https://cartesia.ai)
+  (`CARTESIA_API_KEY`) does speech to text (Ink) and text to speech
+  (Sonic). You also need the id of a Cartesia voice (pick one in their
+  playground and copy its id).
+- Optionally, [Deepgram](https://deepgram.com) for speech to text
+  instead (`[stt] provider = "deepgram"` in the config and
+  `DEEPGRAM_API_KEY`). Deepgram Nova-3 sends partial transcripts and
+  word timings; Cartesia Ink-2 sends finals only.
 
 Text mode needs no keys and no audio device.
 
@@ -62,6 +67,9 @@ Create `~/.config/cc-voice/config.toml`. Only the voice id is required:
 [tts]
 voice = "your-cartesia-voice-id"
 
+[stt]
+provider = "cartesia"  # or "deepgram"
+
 [words]
 address = "operator"   # the word that opens a turn
 closer = "over"        # the word that sends it
@@ -70,6 +78,9 @@ closer = "over"        # the word that sends it
 speech = 1.0           # what Claude says to you
 narration = 0.5        # tool-call narration, quieter by design
 earcons = 0.6
+
+[gate]
+hangover_s = 10.0      # quiet after your last words before the speech link closes
 
 [seat]
 # extra flags for the claude child, e.g. to pre-approve edits:
@@ -84,11 +95,13 @@ A project can override any of it with a `.cc-voice.toml` in its folder.
 Keys come from the environment, never the config file:
 
 ```sh
-export DEEPGRAM_API_KEY=...
 export CARTESIA_API_KEY=...
+export DEEPGRAM_API_KEY=...   # only with provider = "deepgram"
 ```
 
-cc-voice removes both keys from the child claude's environment.
+At startup cc-voice names exactly the key the chosen providers need
+and is missing. It removes every speech key from the child claude's
+environment.
 
 ## Run
 
@@ -112,7 +125,7 @@ cd your-project
 cc-voice
 ```
 
-A rising chime means the mic and the speech link are up. Then:
+A rising chime means the mic is up and the speech link answered. Then:
 
 | Say | What happens |
 |---|---|
@@ -132,6 +145,13 @@ keeps going. Saying the address word while cc-voice is talking pauses
 it; it resumes after your turn is sent or cancelled. You can speak while
 Claude works: the message reaches it at the next tool boundary.
 
+The speech-to-text connection exists only while you talk. A small
+local voice detector opens it at your first word (the half second
+before is kept and sent too, so nothing is lost to the connect) and
+closes it ten seconds after your last, unless a turn is still open, in
+which case any pause is fine. Idle time costs nothing on your plan and
+holds no connection.
+
 Useful flags: `--new` starts a fresh claude session instead of resuming
 the pinned one, `--resume SESSION_ID` pins a specific one, `--voice ID`
 overrides the voice, and anything after `--` goes to claude
@@ -145,7 +165,11 @@ system-prompt file on every spawn (there is nothing to install on the
 Claude side). Claude ends each response with a fenced voice block; a
 Translator turns the stream into narration, spoken lines and the percent
 closer; a SpokenLog plays a cursor through everything said, which is
-what makes pause, resume and replay work.
+what makes pause, resume and replay work. On the way in, a gate with a
+local voice detector (WebRTC's) owns the speech-to-text session, so
+the TurnMachine, the watchdogs and playback never learn which vendor
+is listening; each vendor lives in one adapter behind a small
+interface (`cc_voice/providers/`).
 
 Session state lives under `~/.local/state/cc-voice/projects/<project>/`:
 the pinned session id, a lock (so two cc-voices never drive one session,
@@ -170,8 +194,17 @@ Answering prompts by voice is the next thing to build.
 ```
 
 The suite is offline: no network, no audio device, no `claude`. Vendors
-are faked behind the provider interface and the child is a scripted
-subprocess.
+are faked behind the provider interface (one contract suite runs over
+every speech-to-text adapter) and the child is a scripted subprocess.
+
+To hear the real vendors without a microphone, `tools/live_check.py`
+synthesizes an utterance with Cartesia, pads it with silence, and
+pushes it through the real gate and adapter at real-time pace:
+
+```sh
+CARTESIA_API_KEY=... .venv/bin/python tools/live_check.py --stt cartesia
+DEEPGRAM_API_KEY=... CARTESIA_API_KEY=... .venv/bin/python tools/live_check.py --stt deepgram
+```
 
 ## License
 
