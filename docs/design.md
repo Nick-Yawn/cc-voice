@@ -50,16 +50,18 @@ The closer counts only at the **end** of what you say: the word, then about 400 
 
 **Vocal commands.** Say "operator" plus a command. These run locally and cost no Claude turn.
 
-| Say | Does |
-|---|---|
-| stop / resume | pause / resume speech where it stopped |
-| again, repeat | replay the last line |
-| status | link, mic, session, what Claude is doing, context fill |
-| cancel, never mind | discard the turn being dictated |
-| interrupt | stop Claude's running query (probe first, §9) |
-| compact | send `/compact` |
-| allow / deny | answer a permission question (§7) |
-| quit | end cleanly |
+| Say | Does | Earcon |
+|---|---|---|
+| stop / resume | pause / resume speech where it stopped | a falling pair (G5 to E5) / the same pair rising: related, told apart by direction |
+| again, repeat | replay the last answer (never a closer, an ack or narration) | the short "got it" tick, then the answer |
+| status | link, mic, session, what Claude is doing, context fill | the tick, then the status |
+| cancel, never mind | discard the turn being dictated | the falling "discarded" tone (same meaning as a discarded turn; never doubled) |
+| interrupt | stop Claude's running query (probe first, §9) | (the tick, when built) |
+| compact | send `/compact` | the tick, then "Received." |
+| allow / deny | answer a permission question (§7) | (the tick, when built) |
+| quit | end cleanly | the tick, then the closing triad (connected's mirror), played to completion before the exit |
+
+Every local command is acknowledged by ear the moment it is recognized (Nick, 2026-09-22), including the ones that then speak.
 
 ---
 

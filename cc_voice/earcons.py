@@ -7,8 +7,17 @@ fundamental plus a quiet octave overtone, quick percussive decay.
   capture      a soft tick: the address word opened a turn
   dispatch     a rising two-note run: the turn is on its way
   abandoned    a falling two-note figure: an open turn was discarded
+               (also "cancel" / "never mind": the same meaning)
+  command      a short high tick, "got it": a local command was heard
+               (again, status, compact, quit)
+  stop         a falling minor third, G5 to E5: playback holds
+  resume       the same two notes rising, E5 to G5: playback goes on
+               (stop and resume share their notes and differ by
+               direction, so the ear tells them apart at once)
   still_here   a soft low blip: Claude is still working
   connected    a triple rising triad: mic and link are up
+  closing      the same triad falling: the mirror of connected, played
+               to completion before the process exits
   disconnected one long low note: the link dropped
 """
 
@@ -17,7 +26,8 @@ from array import array
 
 SAMPLE_RATE = 24_000
 
-CUE_KEYS = ("capture", "dispatch", "abandoned", "still_here", "connected", "disconnected")
+CUE_KEYS = ("capture", "dispatch", "abandoned", "command", "stop", "resume",
+            "still_here", "connected", "closing", "disconnected")
 
 
 def _note(freq: float, dur_s: float, sample_rate: int = SAMPLE_RATE,
@@ -64,9 +74,17 @@ def get_set(sample_rate: int = SAMPLE_RATE) -> dict[str, bytes]:
                            _note(659.25, 0.12, sample_rate)),                    # C5 -> E5
         "abandoned": _bytes(_note(392.00, 0.10, sample_rate), _gap(0.02, sample_rate),
                             _note(293.66, 0.22, sample_rate)),                   # G4 -> D4
+        "command": _bytes(_note(659.25, 0.07, sample_rate)),                     # E5, short
+        "stop": _bytes(_note(783.99, 0.07, sample_rate), _gap(0.02, sample_rate),
+                       _note(659.25, 0.09, sample_rate)),                        # G5 -> E5
+        "resume": _bytes(_note(659.25, 0.07, sample_rate), _gap(0.02, sample_rate),
+                         _note(783.99, 0.09, sample_rate)),                      # E5 -> G5
         "still_here": _bytes(_blip(sample_rate)),
         "connected": _bytes(_note(523.25, 0.10, sample_rate), _gap(0.02, sample_rate),
                             _note(659.25, 0.10, sample_rate), _gap(0.02, sample_rate),
                             _note(783.99, 0.18, sample_rate)),                   # C5 E5 G5
+        "closing": _bytes(_note(783.99, 0.10, sample_rate), _gap(0.02, sample_rate),
+                          _note(659.25, 0.10, sample_rate), _gap(0.02, sample_rate),
+                          _note(523.25, 0.18, sample_rate)),                     # G5 E5 C5
         "disconnected": _bytes(_note(196.00, 0.60, sample_rate)),                # G3, long
     }

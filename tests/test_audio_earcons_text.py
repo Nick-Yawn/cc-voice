@@ -21,6 +21,11 @@ def test_every_cue_is_nonempty_even_pcm16_and_distinct():
     assert int(0.5 * rate_bytes) <= len(cues["disconnected"]) <= int(0.65 * rate_bytes)
     assert len(cues["connected"]) > len(cues["dispatch"]) > len(cues["capture"])
     assert len(earcons.get_set(48000)["capture"]) == 2 * len(cues["capture"])
+    # the command family: a short got-it, a stop/resume pair that shares its
+    # notes and differs by direction, and the closing mirror of connected
+    assert len(cues["command"]) < len(cues["capture"])
+    assert len(cues["stop"]) == len(cues["resume"]) and cues["stop"] != cues["resume"]
+    assert len(cues["closing"]) == len(cues["connected"]) and cues["closing"] != cues["connected"]
 
 
 # -- pcm and the watchdog ---------------------------------------------------

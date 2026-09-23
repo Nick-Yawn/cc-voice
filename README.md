@@ -127,16 +127,22 @@ cc-voice
 
 A rising chime means the mic is up and the speech link answered. Then:
 
-| Say | What happens |
-|---|---|
-| "operator, ..." | opens a turn (a soft tick confirms it); keep talking, pause as long as you like |
-| "... over" | sends the turn (a rising two-note run, then "Received.") |
-| "operator stop" / "operator resume" | pause / resume speech where it stopped |
-| "operator again" / "operator repeat" | replay the last line |
-| "operator status" | link, mic, session, what Claude is doing, context fill |
-| "operator cancel" / "operator never mind" | discard the turn being dictated |
-| "operator compact" | send `/compact` |
-| "operator quit" | end cleanly (after any turn in flight lands) |
+| Say | What happens | You hear |
+|---|---|---|
+| "operator, ..." | opens a turn; keep talking, pause as long as you like | a soft tick |
+| "... over" | sends the turn | a rising two-note run, then "Received." |
+| "operator stop" | pause speech | a falling pair (G to E) |
+| "operator resume" | resume where it stopped | the same pair rising (E to G) |
+| "operator again" / "operator repeat" | replay the last answer | a short high tick, then the answer |
+| "operator status" | link, mic, session, what Claude is doing, context fill | the tick, then the status |
+| "operator cancel" / "operator never mind" | discard the turn being dictated | the falling "discarded" tone |
+| "operator compact" | send `/compact` | the tick, then "Received." |
+| "operator quit" | end cleanly (after any turn in flight lands) | the tick, then a falling triad as it exits |
+
+Every command is acknowledged by ear the moment it is heard, so you
+never wonder whether it landed. Stop and resume share their two notes
+and differ by direction; the quit triad is the startup chime played
+backwards.
 
 Anything said without the address word is ignored. "operator" counts
 only as the first word you say; "over" counts only as the last word,

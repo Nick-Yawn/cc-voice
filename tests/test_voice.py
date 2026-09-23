@@ -341,3 +341,48 @@ def test_compact_after_a_stop_is_heard(tmp_path):
         await run
 
     asyncio.run(scenario())
+
+
+def test_every_command_plays_its_cue_and_quit_ends_on_the_closing_tone(tmp_path):
+    answers = {"one": [result("⟦voice⟧One.⟦/voice⟧", used=100, window=1000)]}
+
+    async def scenario():
+        host, seat, claude, stt, tts, stream, mic, out, run = build(tmp_path, answers)
+        await until(lambda: stt.sessions)
+        stt.queue.put_nowait(Final("Operator, one over"))
+        await until(lambda: ("10 percent.", None) in tts.spoken)
+        await until(lambda: not host.spoken.busy)
+
+        def cues_after(n):
+            return cue_names(stream)[n:]
+
+        for phrase, cue in (("Operator stop", "stop"), ("Operator resume", "resume"),
+                            ("Operator again", "command"), ("Operator status", "command"),
+                            ("Operator compact", "command")):
+            n = len(cue_names(stream))
+            stt.queue.put_nowait(Final(phrase))
+            await until(lambda: cues_after(n))
+            assert cues_after(n)[0] == cue, phrase
+            await until(lambda: not host.spoken.busy)
+        # cancel with nothing open: the falling tone, once
+        n = len(cue_names(stream))
+        stt.queue.put_nowait(Final("Operator never mind"))
+        await until(lambda: cues_after(n))
+        await asyncio.sleep(0.05)
+        assert cues_after(n) == ["abandoned"]
+        # cancel of a dictated turn: the falling tone, still once
+        stt.queue.put_nowait(Final("Operator, half a thought"))
+        await until(lambda: host.spoken.holds == frozenset({"talk"}))
+        n = len(cue_names(stream))
+        stt.queue.put_nowait(Final("Operator cancel"))
+        await until(lambda: cues_after(n))
+        await asyncio.sleep(0.05)
+        assert cues_after(n) == ["abandoned"]
+        # quit: got it, then the closing tone, fully played before the exit
+        n = len(cue_names(stream))
+        stt.queue.put_nowait(Final("Operator quit"))
+        await run
+        assert cues_after(n) == ["command", "closing"]
+        assert stream.writes[-1] == CUES["closing"]
+
+    asyncio.run(scenario())

@@ -139,6 +139,7 @@ class VoiceFront:
     # -- the turn machine's actions --------------------------------------------
 
     def handle_actions(self, acts: list[tuple]) -> None:
+        cued_abandoned = False
         for act in acts:
             kind = act[0]
             if kind == "drop":
@@ -163,10 +164,11 @@ class VoiceFront:
                     self._out("  (empty turn, nothing sent)")
             elif kind == "command":
                 self.host.spoken.resume("talk")
-                self.command(act[1], act[2])
+                self.command(act[1], act[2], cued_abandoned=cued_abandoned)
             elif kind == "abandoned":
                 self.host.spoken.resume("talk")
                 self.cue("abandoned")
+                cued_abandoned = True
                 self._out(f"  [discarded: {act[1]}]")
                 self.host.log.write("abandoned", text=act[1])
         self._sync_settle()
@@ -221,9 +223,21 @@ class VoiceFront:
 
     # -- local commands ------------------------------------------------------------
 
-    def command(self, name: str, arg) -> None:
+    def command(self, name: str, arg, *, cued_abandoned: bool = False) -> None:
+        """Every command is acknowledged by ear the moment it is heard:
+        stop and resume by their own pair, cancel by the falling tone a
+        discarded turn gets (the same meaning; once, even when the turn
+        it discarded already played it), everything else by the short
+        "got it" tick. Quit adds the closing triad as the process ends."""
         host = self.host
         host.log.write("command", name=name, arg=arg)
+        if name in ("stop", "resume"):
+            self.cue(name)
+        elif name == "cancel":
+            if not cued_abandoned:
+                self.cue("abandoned")
+        else:
+            self.cue("command")
         if name not in ("stop", "resume"):
             host.spoken.user_input()  # any other command is new input: a stop ends
         if name == "stop":
@@ -350,6 +364,9 @@ class VoiceFront:
             self.mic.stop()
             await self.gate.stop()
             await host.shutdown()
+            self.cue("closing")
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(self.playback.wait_played(), 2.0)
             self.playback.stop()
             self._out("[session closed]")
 
