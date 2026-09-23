@@ -36,8 +36,10 @@ open questions.
   (`DEEPGRAM_API_KEY`) does speech to text and is the default —
   strongly recommended: in testing it was snappy and clear.
   [Cartesia](https://cartesia.ai) (`CARTESIA_API_KEY`) does text to
-  speech (Sonic) and is needed either way. You also need the id of a
-  Cartesia voice (pick one in their playground and copy its id).
+  speech (Sonic) and is needed either way. cc-voice ships with a
+  default public voice, so picking one is optional; set `[tts] voice`
+  to a different Cartesia voice id (pick one in their playground and
+  copy its id) if you want another.
 - Cartesia speech to text (Ink) is a supported option
   (`[stt] provider = "cartesia"`). One honest line: in testing, its
   chunking and lack of word timings made the address and closer words
@@ -71,9 +73,10 @@ wheel bundles it. On Linux, `apt install libportaudio2` first.
 
 ## Configure
 
-Create `~/.config/cc-voice/config.toml`. The voice id is required;
-`[seat] claude_args` below is the other setting worth setting on
-purpose:
+Create `~/.config/cc-voice/config.toml`. Nothing in it is required —
+Deepgram, a shipped Cartesia voice, and the defaults below all work
+out of the box — but `[seat] claude_args` below is the one setting
+worth setting on purpose:
 
 ```toml
 [seat]
@@ -83,7 +86,7 @@ purpose:
 claude_args = ["--permission-mode", "auto"]
 
 [tts]
-voice = "your-cartesia-voice-id"
+voice = ""             # optional: a Cartesia voice id, overriding the shipped default
 
 [stt]
 provider = "deepgram"  # or "cartesia" (see "What you need" above)

@@ -84,9 +84,14 @@ def cue_names(stream: FakeOutStream) -> list[str]:
 
 
 def build(tmp_path, answers, overlay=None, tts=None):
+    # tts.voice stays "" here: these scenarios are about turns and
+    # commands, not which voice id gets threaded through, and pinning it
+    # keeps their `(text, None)` assertions independent of DEFAULTS'
+    # shipped voice id.
     cfg = deep_merge(DEFAULTS, {"turns": {"closer_settle_s": 0.03},
                                 "volumes": {"earcons": 1.0},
                                 "seat": {"still_here_s": 60},
+                                "tts": {"voice": ""},
                                 "gate": {"hangover_s": 60, "empty_hangover_s": 60,
                                          "deaf_s": 0}, **(overlay or {})})
     out = []

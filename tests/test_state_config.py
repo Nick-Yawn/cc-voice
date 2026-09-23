@@ -52,6 +52,19 @@ def test_deepgram_is_the_default_stt():
     assert missing_keys(cfg, {}) == ["DEEPGRAM_API_KEY", "CARTESIA_API_KEY"]
 
 
+def test_tts_ships_a_default_public_voice():
+    # a public Cartesia stock voice (confirmed via their voices API:
+    # access "public", visibility "all", not owned, English), so [tts]
+    # voice is no longer required for a first run
+    assert cfgmod.DEFAULTS["tts"]["voice"]
+    tts = make_tts(cfgmod.DEFAULTS, {"CARTESIA_API_KEY": "ck"})
+    assert type(tts).__name__ == "CartesiaTTS"
+    assert tts.voice_id == cfgmod.DEFAULTS["tts"]["voice"]
+    # explicitly clearing it is still an error, not a silent fallback
+    with pytest.raises(ConfigError, match="voice id"):
+        make_tts(deep_merge(cfgmod.DEFAULTS, {"tts": {"voice": ""}}), {"CARTESIA_API_KEY": "ck"})
+
+
 def test_keys_come_from_env_and_leave_the_child_env():
     env = {"DEEPGRAM_API_KEY": "dg", "CARTESIA_API_KEY": "ck", "PATH": "/bin",
            "HOME": "/home/x"}

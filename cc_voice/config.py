@@ -26,7 +26,10 @@ DEFAULTS: dict = {
     },
     "tts": {
         "provider": "cartesia",
-        "voice": "",          # a Cartesia voice id; required for voice mode
+        # a Cartesia voice id; defaults to "Daniel", a public Cartesia
+        # stock voice (confirmed via their voices API: access "public",
+        # visibility "all", not owned or cloned, English)
+        "voice": "47c38ca4-5f35-497b-b1a3-415245fb35e1",
         "model": "sonic-3.6-2026-08-27",
     },
     "words": {
