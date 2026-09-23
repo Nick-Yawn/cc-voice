@@ -45,10 +45,12 @@ class FakeMic:
 
     def __init__(self):
         self.last_frame_t = None
+        self.last_live_t = None
         self.started = 0
         self.stopped = 0
         self.on_frame = None
         self.device_name = "fake mic"
+        self.device_rate = 16000
 
     def start(self, loop, on_frame):
         self.started += 1

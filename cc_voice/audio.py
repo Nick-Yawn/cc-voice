@@ -7,9 +7,14 @@ websockets at once). abort() drops everything queued and restarts the
 stream. A marker enqueued behind audio resolves a future when the drain
 thread reaches it, which is how the player awaits "played out".
 
-Mic: a RawInputStream whose callback hands PCM16 frames to the loop.
-The frame-starvation watchdog (watchdog_tick, pure) notices a wedged or
-changed device without any help from the speech vendor.
+Mic: a RawInputStream opened at the DEVICE's own rate (queried at every
+start, because a Bluetooth headset renegotiates its profile and rate
+when playback starts or stops) and resampled here to the rate the
+listener was opened with. The callback marks two clocks: the last frame
+of any kind and the last LIVE frame (not digital silence), because a
+dead Bluetooth mic keeps delivering zeros instead of stopping. The
+watchdog (watchdog_tick, pure) rebuilds the device on either symptom
+without any help from the speech vendor.
 """
 
 import asyncio
@@ -23,7 +28,10 @@ OUT_RATE = 24_000
 MIC_RATE = 16_000
 MIC_CHUNK_MS = 40
 
-MIC_STARVED_S = 5.0
+MIC_STARVED_S = 5.0   # no frames at all
+MIC_SILENT_S = 8.0    # frames, but every sample zero
+
+_UNTRACKED = object()  # watchdog_tick: no separate live-frame clock
 
 
 def scale_pcm(pcm: bytes, gain: float) -> bytes:
@@ -173,31 +181,88 @@ class Playback:
                     pass
 
 
+def is_digital_silence(pcm: bytes) -> bool:
+    return not pcm.strip(b"\x00")
+
+
+class Resampler:
+    """Linear-interpolation resampling of PCM16 mono, stateful across
+    chunks (the seam between two chunks is interpolated, not dropped).
+    Pure Python: at 48 kHz in, about a percent of a core."""
+
+    def __init__(self, src_rate: int, dst_rate: int):
+        self.src_rate = int(src_rate)
+        self.dst_rate = int(dst_rate)
+        self._step = self.src_rate / self.dst_rate
+        self._pos = 1.0     # position in [prev] + chunk index space; 1 = the first sample
+        self._prev = 0
+
+    def __call__(self, pcm: bytes) -> bytes:
+        if self.src_rate == self.dst_rate:
+            return pcm
+        src = array("h", pcm[: len(pcm) - (len(pcm) % 2)])
+        if not src:
+            return b""
+        ext = array("h", [self._prev])
+        ext.extend(src)
+        out = array("h")
+        pos, step, last = self._pos, self._step, len(ext) - 1
+        while pos < last:
+            i = int(pos)
+            frac = pos - i
+            a, b = ext[i], ext[i + 1]
+            out.append(int(a + (b - a) * frac))
+            pos += step
+        self._pos = pos - last
+        self._prev = src[-1]
+        return out.tobytes()
+
+
 class Mic:
-    """The input device: frames reach on_frame(bytes) on the loop thread.
-    last_frame_t is written only by a real callback."""
+    """The input device: frames reach on_frame(bytes) on the loop thread
+    as PCM16 mono at `rate`, whatever rate the device runs at.
+    last_frame_t and last_live_t are written only by a real callback."""
 
     def __init__(self, rate: int = MIC_RATE, chunk_ms: int = MIC_CHUNK_MS, device=None,
-                 open_stream=None):
+                 open_stream=None, query_device=None):
         self.rate = rate
         self.chunk_ms = chunk_ms
         self.device = device
         self._open = open_stream or self._raw_input
+        self._query = query_device or self._query_input
         self.stream = None
+        self.device_name: str | None = None
+        self.device_rate: int | None = None
         self.last_frame_t: float | None = None
+        self.last_live_t: float | None = None
 
-    def _raw_input(self, callback):
+    def _query_input(self) -> tuple[str, int]:
         import sounddevice as sd
-        return sd.RawInputStream(samplerate=self.rate, channels=1, dtype="int16",
-                                 blocksize=self.rate * self.chunk_ms // 1000,
-                                 device=self.device, callback=callback)
+        info = sd.query_devices(self.device, "input") if self.device is not None \
+            else sd.query_devices(kind="input")
+        return str(info["name"]), int(info["default_samplerate"] or self.rate)
+
+    def _raw_input(self, callback, rate: int, blocksize: int):
+        import sounddevice as sd
+        return sd.RawInputStream(samplerate=rate, channels=1, dtype="int16",
+                                 blocksize=blocksize, device=self.device,
+                                 callback=callback)
 
     def start(self, loop, on_frame) -> None:
-        def callback(indata, frames, t, status):
-            self.last_frame_t = time.monotonic()
-            loop.call_soon_threadsafe(on_frame, bytes(indata))
+        """Query the device afresh, open at its rate, resample to ours."""
+        self.device_name, self.device_rate = self._query()
+        resample = Resampler(self.device_rate, self.rate)
 
-        self.stream = self._open(callback)
+        def callback(indata, frames, t, status):
+            now = time.monotonic()
+            self.last_frame_t = now
+            pcm = bytes(indata)
+            if not is_digital_silence(pcm):
+                self.last_live_t = now
+            loop.call_soon_threadsafe(on_frame, resample(pcm))
+
+        self.stream = self._open(callback, self.device_rate,
+                                 self.device_rate * self.chunk_ms // 1000)
         self.stream.start()
 
     def stop(self) -> None:
@@ -216,22 +281,29 @@ def starved(last_frame_t: float | None, now: float, threshold: float = MIC_STARV
 
 def watchdog_tick(last_frame_t: float | None, pass_start: float, down: bool,
                   down_since: float | None, now: float,
-                  threshold: float = MIC_STARVED_S) -> tuple[bool, float | None, str | None, bool]:
-    """One tick of the mic-starvation watchdog, pure. Returns (down,
-    down_since, event, starved_now): event is "down" on the falling
-    edge, "up" once a REAL frame newer than the moment we went down has
-    arrived, else None; starved_now is the rebuild trigger. The
-    reference clock is the newer of the last real frame and the pass
-    start, so a fresh pass gets its grace window without ever faking a
-    frame."""
-    reference = pass_start if last_frame_t is None or pass_start > last_frame_t \
+                  threshold: float = MIC_STARVED_S, last_live_t=_UNTRACKED,
+                  silent_threshold: float = MIC_SILENT_S,
+                  ) -> tuple[bool, float | None, str | None, bool]:
+    """One tick of the mic watchdog, pure. Returns (down, down_since,
+    event, starved_now): event is "down" (no frames) or "silent" (frames
+    of pure zeros) on the falling edge, "up" once a LIVE frame newer
+    than the moment we went down has arrived, else None; starved_now is
+    the rebuild trigger. The reference clocks are the newer of the last
+    frame (or last live frame) and the pass start, so a fresh pass gets
+    its grace window without ever faking a frame. Without a separate
+    last_live_t every frame counts as live; None means none yet."""
+    live = last_frame_t if last_live_t is _UNTRACKED else last_live_t
+    ref_frames = pass_start if last_frame_t is None or pass_start > last_frame_t \
         else last_frame_t
-    if starved(reference, now, threshold):
+    ref_live = pass_start if live is None or pass_start > live else live
+    no_frames = starved(ref_frames, now, threshold)
+    silent = not no_frames and starved(ref_live, now, silent_threshold)
+    if no_frames or silent:
         if not down:
-            return True, now, "down", True
+            return True, now, "down" if no_frames else "silent", True
         return True, down_since, None, True
     if down:
-        if last_frame_t is not None and down_since is not None and last_frame_t > down_since:
+        if live is not None and down_since is not None and live > down_since:
             return False, None, "up", False
         return True, down_since, None, False
     return False, None, None, False

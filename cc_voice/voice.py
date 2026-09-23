@@ -281,7 +281,10 @@ class VoiceFront:
             mic_failures = 0
             self.host.log.write("mic", state="started",
                                 device=getattr(self.mic, "device_name", None),
+                                device_rate=getattr(self.mic, "device_rate", None),
                                 rate=self.mic.rate)
+            self._out(f"[mic: {getattr(self.mic, 'device_name', None) or 'default'}"
+                      f" at {getattr(self.mic, 'device_rate', None) or self.mic.rate} Hz]")
             self._rebuild.clear()
             await self._rebuild.wait()
             self.mic.stop()
@@ -293,15 +296,19 @@ class VoiceFront:
         while True:
             await asyncio.sleep(WATCHDOG_INTERVAL_S)
             down, down_since, event, starved_now = watchdog_tick(
-                self.mic.last_frame_t, self.pass_start, down, down_since, self._clock())
+                self.mic.last_frame_t, self.pass_start, down, down_since, self._clock(),
+                last_live_t=getattr(self.mic, "last_live_t", None))
             if event == "down":
                 self._out("[ears: no mic frames; rebuilding the microphone]")
                 self.host.log.write("watchdog", event="mic_down")
+            elif event == "silent":
+                self._out("[ears: the microphone delivers only silence; rebuilding it]")
+                self.host.log.write("watchdog", event="mic_silent")
             elif event == "up":
                 self._out("[ears: mic frames back]")
                 self.host.log.write("watchdog", event="mic_up")
             if starved_now:
-                self.request_rebuild("no mic frames")
+                self.request_rebuild("no mic frames" if event != "silent" else "silent frames")
 
     async def abandon_ticker(self) -> None:
         while True:

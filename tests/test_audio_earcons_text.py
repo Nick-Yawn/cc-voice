@@ -4,7 +4,7 @@ import time
 from array import array
 
 from cc_voice import earcons
-from cc_voice.audio import Playback, scale_pcm, starved, watchdog_tick
+from cc_voice.audio import Mic, Playback, Resampler, scale_pcm, starved, watchdog_tick
 from cc_voice.text import Respeller, sentence_chunks
 
 
@@ -50,6 +50,105 @@ def test_starved_and_watchdog_tick():
     assert (d, since, ev, s) == (False, None, "up", False)
     d, since, ev, s = watchdog_tick(9.5, 8.0, d, since, 11.0)
     assert (d, ev, s) == (False, None, False)
+
+
+def test_watchdog_treats_frames_of_pure_silence_as_a_dead_mic():
+    # frames keep coming (last_frame_t fresh) but none has been live since the pass began
+    d, since, ev, s = watchdog_tick(19.9, 10.0, False, None, 20.0, last_live_t=None)
+    assert (d, since, ev, s) == (True, 20.0, "silent", True)      # 10 s > MIC_SILENT_S
+    d, since, ev, s = watchdog_tick(21.9, 10.0, d, since, 22.0, last_live_t=None)
+    assert (d, ev, s) == (True, None, True)                        # periodic rebuilds
+    # a rebuild starts a new pass: grace again, still down
+    d, since, ev, s = watchdog_tick(22.5, 22.2, d, since, 23.0, last_live_t=None)
+    assert (d, ev, s) == (True, None, False)
+    # frames that are still zeros never count as "up"; a live one does
+    d, since, ev, s = watchdog_tick(30.9, 22.2, d, since, 31.0, last_live_t=None)
+    assert (d, ev, s) == (True, None, True)
+    d, since, ev, s = watchdog_tick(31.5, 22.2, d, since, 31.6, last_live_t=31.5)
+    assert (d, since, ev, s) == (False, None, "up", False)
+    # a live frame within the silent threshold: nothing to do
+    assert watchdog_tick(40.0, 22.2, False, None, 41.0, last_live_t=36.0)[2] is None
+
+
+# -- the resampler and the mic ------------------------------------------------------
+
+def test_resampler_rates_and_seams():
+    same = Resampler(16000, 16000)
+    pcm = array("h", [1, 2, 3, 4]).tobytes()
+    assert same(pcm) is pcm
+    down = Resampler(48000, 16000)
+    ramp = array("h", range(0, 4800, 1)).tobytes()  # 100 ms at 48 kHz
+    out = array("h", down(ramp))
+    assert 1598 <= len(out) <= 1601                  # 1600 samples of 16 kHz
+    assert out[0] == 0 and out[1] == 3 and out[100] == 300  # every third sample
+    # chunked input gives the same stream as one piece (the seam is carried)
+    chunked = Resampler(48000, 16000)
+    parts = [ramp[:2000], ramp[2000:5000], ramp[5000:]]
+    joined = array("h", b"".join(chunked(p) for p in parts))
+    assert list(joined) == list(out)
+    up = Resampler(8000, 16000)
+    first = len(array("h", up(array("h", [0] * 80).tobytes())))
+    assert 158 <= first <= 160                        # the seam waits for the next chunk
+    second = len(array("h", up(array("h", [0] * 80).tobytes())))
+    assert 318 <= first + second <= 320               # and is carried, not lost
+    assert Resampler(48000, 16000)(b"") == b""
+
+
+class FakeInStream:
+    def __init__(self):
+        self.started = 0
+        self.stops = 0
+        self.closes = 0
+        self.callback = None
+        self.rate = None
+        self.blocksize = None
+
+    def start(self):
+        self.started += 1
+
+    def stop(self):
+        self.stops += 1
+
+    def close(self):
+        self.closes += 1
+
+
+def test_mic_opens_at_the_device_rate_and_hands_over_16k_frames():
+    streams = []
+    devices = [("Built-in Microphone", 48000), ("WH-1000XM5", 16000)]
+
+    def open_stream(callback, rate, blocksize):
+        fs = FakeInStream()
+        fs.callback, fs.rate, fs.blocksize = callback, rate, blocksize
+        streams.append(fs)
+        return fs
+
+    delivered = []
+
+    class Loop:
+        def call_soon_threadsafe(self, fn, *args):
+            fn(*args)
+
+    mic = Mic(rate=16000, chunk_ms=40, open_stream=open_stream,
+              query_device=lambda: devices.pop(0))
+    mic.start(Loop(), delivered.append)
+    assert (mic.device_name, mic.device_rate) == ("Built-in Microphone", 48000)
+    assert streams[0].rate == 48000 and streams[0].blocksize == 1920
+    live = array("h", [500] * 1920).tobytes()          # 40 ms at 48 kHz
+    streams[0].callback(live, 1920, None, None)
+    assert 1276 <= len(delivered[0]) <= 1282           # about 640 samples
+    assert mic.last_frame_t is not None and mic.last_live_t is not None
+    mic.last_live_t = None
+    streams[0].callback(bytes(3840), 1920, None, None)  # digital silence
+    assert mic.last_live_t is None and len(delivered) == 2
+    # a rebuild re-queries: the headset flipped to its 16 kHz profile
+    mic.stop()
+    assert streams[0].stops == 1 and streams[0].closes == 1
+    mic.start(Loop(), delivered.append)
+    assert (mic.device_name, mic.device_rate) == ("WH-1000XM5", 16000)
+    assert streams[1].rate == 16000 and streams[1].blocksize == 640
+    streams[1].callback(bytes(1280), 640, None, None)
+    assert len(delivered[2]) == 1280                    # passed through untouched
 
 
 # -- playback with a fake stream -----------------------------------------------

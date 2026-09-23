@@ -317,13 +317,15 @@ class Gate:
             await session.close()
 
     async def stop(self) -> None:
-        """Quit: no flush is owed; whatever is open closes."""
+        """Quit: no flush is owed; whatever is open closes. The session
+        is taken before the loop is cancelled, since the loop's own
+        cleanup forgets it; adapters make a second close harmless."""
         self._quit = True
+        session, self._session = self._session, None
         task, self._task = self._task, None
         if task is not None:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
-        session, self._session = self._session, None
         if session is not None:
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(session.close(), 1.0)

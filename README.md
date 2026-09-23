@@ -23,6 +23,13 @@ open questions.
   binary on your PATH under your own account.
 - Headphones. cc-voice scrubs its own control words from everything it
   speaks, but on open speakers the mic still hears the voice.
+- A microphone. A wired headset or the machine's built-in mic is the
+  most reliable setup. Bluetooth headset mics are supported but
+  flakier: the headset renegotiates its profile (and the mic's sample
+  rate) whenever playback starts or stops, and a dead link tends to
+  deliver silence instead of stopping. cc-voice opens the device at
+  its own rate, watches for frames that stop or go silent, and
+  rebuilds the input when they do; the log names the device it opened.
 - For voice mode, two API keys:
   - [Deepgram](https://deepgram.com) for speech to text (`DEEPGRAM_API_KEY`).
   - [Cartesia](https://cartesia.ai) for text to speech (`CARTESIA_API_KEY`),

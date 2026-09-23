@@ -255,7 +255,7 @@ def test_probe_and_stop():
         await h.settle()
         assert h.gate.state == Gate.OPEN
         await h.gate.stop()
-        assert h.gate.state == Gate.CLOSED and h.session.close_calls == 1
+        assert h.gate.state == Gate.CLOSED and h.session.close_calls >= 1
         h.feed(VOICED, 5)                      # after a stop: inert
         await h.settle()
         assert h.opener.calls == 2
