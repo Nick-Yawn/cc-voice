@@ -19,7 +19,7 @@ PROJECT_CONFIG_NAME = ".cc-voice.toml"
 
 DEFAULTS: dict = {
     "stt": {
-        "provider": "cartesia",   # or "deepgram" (needs DEEPGRAM_API_KEY)
+        "provider": "deepgram",   # or "cartesia" (needs CARTESIA_API_KEY)
         "language": "en",
         "cartesia": {"model": "ink-2"},
         "deepgram": {"model": "nova-3"},

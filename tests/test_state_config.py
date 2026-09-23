@@ -42,6 +42,16 @@ def test_defaults_and_overlays(tmp_path):
         {"a": {"b": 9, "c": 2}, "d": 3}
 
 
+def test_deepgram_is_the_default_stt():
+    # Deepgram: snappy and clear in live trials; Cartesia STT stayed an
+    # option after its chunking and missing word timings proved unreliable.
+    assert cfgmod.DEFAULTS["stt"]["provider"] == "deepgram"
+    assert cfgmod.DEFAULTS["tts"]["provider"] == "cartesia"
+    cfg = deep_merge(cfgmod.DEFAULTS, {"tts": {"voice": "v"}})
+    assert required_key_envs(cfg) == ["DEEPGRAM_API_KEY", "CARTESIA_API_KEY"]
+    assert missing_keys(cfg, {}) == ["DEEPGRAM_API_KEY", "CARTESIA_API_KEY"]
+
+
 def test_keys_come_from_env_and_leave_the_child_env():
     env = {"DEEPGRAM_API_KEY": "dg", "CARTESIA_API_KEY": "ck", "PATH": "/bin",
            "HOME": "/home/x"}

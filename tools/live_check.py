@@ -12,8 +12,8 @@ reports: the gate opened only for speech, the address word and the
 closer were heard, word timings arrived, the latency from the gate's
 open to the first transcript, and how the session closed.
 
-    CARTESIA_API_KEY=... [DEEPGRAM_API_KEY=...] python tools/live_check.py --stt cartesia
-    python tools/live_check.py --stt deepgram
+    CARTESIA_API_KEY=... DEEPGRAM_API_KEY=... python tools/live_check.py --stt deepgram
+    CARTESIA_API_KEY=... python tools/live_check.py --stt cartesia
 
 Keys come from the environment only and are never printed. The voice id
 comes from --voice or ~/.config/cc-voice/config.toml.
@@ -173,7 +173,7 @@ async def main(args) -> int:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--stt", default="cartesia", choices=["cartesia", "deepgram"])
+    ap.add_argument("--stt", default="deepgram", choices=["cartesia", "deepgram"])
     ap.add_argument("--voice", default=None)
     ap.add_argument("--text", default="Operator, what time is it?")
     ap.add_argument("--closer", default="Over.")
