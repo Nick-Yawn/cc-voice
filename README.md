@@ -45,18 +45,26 @@ Text mode needs no keys and no audio device.
 
 ## Install
 
-From a checkout:
+One command, with [uv](https://docs.astral.sh/uv/) (recommended) or [pipx](https://pipx.pypa.io):
 
 ```sh
-git clone git@github.com:Nick-Yawn/cc-voice.git
-cd cc-voice
-python3 -m venv .venv && .venv/bin/pip install -e .
+uv tool install git+https://github.com/Nick-Yawn/cc-voice
+# or
+pipx install git+https://github.com/Nick-Yawn/cc-voice
 ```
 
-or with [uv](https://docs.astral.sh/uv/): `uv venv && uv pip install -e .`
+That puts `cc-voice` on your PATH. To upgrade later, run `uv tool upgrade cc-voice`
+(or `pipx upgrade cc-voice`).
 
-That puts a `cc-voice` command in the venv (`.venv/bin/cc-voice`). The
-audio layer uses `sounddevice`, which needs PortAudio; on macOS the
+To hack on it, install it from a checkout instead:
+
+```sh
+git clone https://github.com/Nick-Yawn/cc-voice.git
+cd cc-voice
+python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+```
+
+The audio layer uses `sounddevice`, which needs PortAudio; on macOS the
 wheel bundles it. On Linux, `apt install libportaudio2` first.
 
 ## Configure
