@@ -150,7 +150,9 @@ async def main(args) -> int:
          and marks["opened_at"] is not None and 1.5 <= marks["opened_at"] <= 3.5),
         ("the address word was heard", "operator" in heard),
         ("the closer was heard", "over" in heard.split()[-1:] or heard.rstrip(".!? ").endswith("over")),
-        ("word timings arrived", bool(marks["words"])),
+        ("word timings arrived" if stt.caps.word_timings
+         else "word timings: none, as the adapter declares for this model",
+         bool(marks["words"]) if stt.caps.word_timings else not marks["words"]),
         ("the turn opened, closed and dispatched",
          "open" in marks["actions"] and "dispatch" in marks["actions"]),
         ("the socket closed on the hangover after the dispatch", marks["closed"] == "hangover"),

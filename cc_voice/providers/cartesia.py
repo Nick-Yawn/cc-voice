@@ -8,13 +8,18 @@ sentence seams. There is no speed field: cc-voice has no speed control.
 
 Speech to text, wss://api.cartesia.ai/stt/websocket (the manual
 endpoint): raw PCM16 binary frames in, `transcript` JSON out with
-`is_final`, `text` (a delta since the last final) and `words` with
-start and end seconds. The text frame "finalize" flushes buffered audio
-(`flush_done` comes back); "close" flushes it and ends the session
-(`done` comes back, and the server closes). close() sends "close" and
-waits for `done`, so the last words of an utterance survive the gate's
-close. `keyterm` params (at most 100 terms, 1200 characters) boost the
-address and closer words. `language` is honored by ink-whisper only.
+`is_final` and `text` (a delta since the last final). Measured live
+(2026-09-22): ink-2 and ink-preview send finals only, no partials and
+no `words`, whatever parameter is tried; ink-whisper sends `words`
+with start and end seconds (and `duration`, `language`). The adapter
+declares word timings only for ink-whisper, so the core's closer rule
+runs on its timer for ink-2. The text frame "finalize" flushes
+buffered audio (`flush_done` comes back); "close" flushes it and ends
+the session (`done` comes back, and the server closes). close() sends
+"close" and waits for `done`, so the last words of an utterance survive
+the gate's close. `keyterm` params (at most 100 terms, 1200 characters)
+boost the address and closer words. `language` is honored by
+ink-whisper only.
 
 Cartesia also offers a turn-detecting endpoint, /stt/turns/websocket,
 which emits turn.start / turn.update / turn.eager_end / turn.resume /
@@ -244,14 +249,20 @@ class CartesiaSession:
             pass
 
 
+def stt_caps(model: str) -> STTCaps:
+    """What the model was measured to deliver over the manual endpoint."""
+    whisper = model.startswith("ink-whisper")
+    return STTCaps(partials=False, word_timings=whisper, native_turns=False,
+                   keyterms=not whisper, streaming=True)
+
+
 class CartesiaSTT:
-    caps = STTCaps(partials=True, word_timings=True, native_turns=False,
-                   keyterms=True, streaming=True)
     default_model = DEFAULT_STT_MODEL
 
     def __init__(self, api_key: str, model: str = DEFAULT_STT_MODEL, connect=None):
         self.api_key = api_key
         self.model = model
+        self.caps = stt_caps(model)
         self._connect = connect or self._websocket
 
     @staticmethod

@@ -189,7 +189,7 @@ def test_contract_open_carries_key_rate_and_keyterms(vendor):
         ws, seen = ScriptedWS(), {}
         stt = vendor.make(_connect(ws, seen))
         assert isinstance(stt, STT)
-        assert stt.caps.partials and stt.caps.word_timings and stt.caps.keyterms
+        assert stt.caps.keyterms and stt.caps.streaming
         session = await stt.open(rate=16000, keyterms=["operator", "over"])
         assert seen["headers"] == vendor.headers
         assert seen["url"].startswith(vendor.url_head)
@@ -371,6 +371,13 @@ def test_stt_url_carries_version_model_encoding_and_bounded_keyterms():
     longs = ["x" * 500, "y" * 500, "z" * 500]
     assert urllib.parse.parse_qs(urllib.parse.urlparse(
         stt_url("ink-2", 16000, longs)).query)["keyterm"] == ["x" * 500, "y" * 500]
+
+
+def test_cartesia_caps_follow_the_model():
+    assert CartesiaSTT("k").caps.word_timings is False          # ink-2, measured live
+    assert CartesiaSTT("k").caps.partials is False
+    assert CartesiaSTT("k", model="ink-whisper").caps.word_timings is True
+    assert CartesiaSTT("k", model="ink-whisper").caps.keyterms is False
 
 
 def test_parse_stt_messages():
