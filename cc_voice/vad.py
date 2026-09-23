@@ -4,10 +4,10 @@ The pick is WebRTC's VAD through the `webrtcvad-wheels` package: MIT,
 no dependencies, about 70 KB, two microseconds a frame, and it builds
 from source in seconds where no wheel exists (Python 3.14 today). A
 Silero ONNX model hears better in noise, but it brings onnxruntime and
-numpy (tens of megabytes) to a tool whose whole pitch is "one key and
-you're talking"; the gate's onset rule and its short no-words hangover
-absorb what WebRTC gets wrong (a click that opens the gate costs two
-seconds of streaming, not a word).
+numpy (tens of megabytes) to a tool whose whole pitch is a couple of
+keys and you're talking; the gate's onset rule and its short no-words
+hangover absorb what WebRTC gets wrong (a click that opens the gate
+costs two seconds of streaming, not a word).
 
 An energy floor sits in front of it: a frame below FLOOR_RMS is never
 speech, whatever the model says. Real microphones never deliver digital

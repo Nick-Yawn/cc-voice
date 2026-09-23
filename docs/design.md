@@ -10,10 +10,10 @@ Status: a proposal for Nick to react to, not a spec. Written 2026-09-22 from the
 
 **Goals**
 
-- An ordinary Claude Code user (Nick's buddy first) installs one package, adds one API key, runs `cc-voice` in a project folder, and codes by voice.
+- An ordinary Claude Code user (Nick's buddy first) installs one package, adds two API keys, runs `cc-voice` in a project folder, and codes by voice.
 - It drives the user's own installed `claude`. cc-voice never handles the Claude login.
 - Two output channels. The full answer appears in the terminal, and a short spoken summary is played aloud.
-- Speech providers can be swapped. Cartesia is the default for both speech to text (Ink) and text to speech (Sonic), so one key is enough; Deepgram is an option for speech to text.
+- Speech providers can be swapped. Deepgram is the default for speech to text, strongly recommended after live trials; Cartesia is the default (and so far only) text-to-speech provider, and remains an option for speech to text.
 - The Cortana loop's lessons ship as defaults, so nobody has to relearn them.
 
 **Non-goals**
@@ -184,8 +184,8 @@ class TTS(Protocol):
 
 | | Speech to text | Text to speech |
 |---|---|---|
-| Default | Cartesia Ink 2, manual endpoint (finals only; the turn-detecting endpoint is the seam for inferred mode) | Cartesia Sonic 3.6 |
-| Option, built | Deepgram Nova-3 streaming (partials, word timings; Flux for inferred turns) | |
+| Default | Deepgram Nova-3 streaming (partials, word timings; Flux for inferred turns) | Cartesia Sonic 3.6 |
+| Option, built | Cartesia Ink 2, manual endpoint (finals only, no word timings; the turn-detecting endpoint is the seam for inferred mode) | |
 | Cloud | OpenAI realtime transcription, ElevenLabs Scribe | OpenAI TTS, ElevenLabs |
 | Local, no key | faster-whisper / whisper.cpp + VAD | macOS `say`, Piper, Kokoro |
 
@@ -291,7 +291,7 @@ The name is **cc-voice** (Nick, 2026-09-22): "cc" for Claude Code, without putti
 
 ## 12. Rulings (Nick, 2026-09-22)
 
-- **One key.** People will have the patience for one key, not two: Cartesia does speech to text by default, and Deepgram stays an option. Making that swap is "the first step of our dependency inversion": the provider seam was audited so that nothing above the adapters knows which vendor listens.
+- **Speech to text.** Deepgram is the default STT and strongly recommended; Cartesia STT is an option (Nick, 2026-09-22, after live trials).
 - **Terms:** not a blocker. Go ahead; if Anthropic objects, they'll say so.
 - **Turn ending:** "over" is the default closer, and inferred ending is opt-in.
 - **Permissions:** build voice allow/deny and judge it live (§7).

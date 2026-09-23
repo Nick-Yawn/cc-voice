@@ -3,7 +3,7 @@
 A voice interface for Claude Code. You talk to your coding agent, and it
 talks back.
 
-One key: Cartesia does both the listening and the speaking.
+Two keys: Deepgram listens, Cartesia speaks.
 
 Run `cc-voice` in a project folder. Say the address word ("operator"),
 talk, and end with "over". Your words go to your own installed `claude`
@@ -32,14 +32,16 @@ open questions.
   deliver silence instead of stopping. cc-voice opens the device at
   its own rate, watches for frames that stop or go silent, and
   rebuilds the input when they do; the log names the device it opened.
-- For voice mode, one API key: [Cartesia](https://cartesia.ai)
-  (`CARTESIA_API_KEY`) does speech to text (Ink) and text to speech
-  (Sonic). You also need the id of a Cartesia voice (pick one in their
-  playground and copy its id).
-- Optionally, [Deepgram](https://deepgram.com) for speech to text
-  instead (`[stt] provider = "deepgram"` in the config and
-  `DEEPGRAM_API_KEY`). Deepgram Nova-3 sends partial transcripts and
-  word timings; Cartesia Ink-2 sends finals only.
+- For voice mode, two API keys. [Deepgram](https://deepgram.com)
+  (`DEEPGRAM_API_KEY`) does speech to text and is the default —
+  strongly recommended: in testing it was snappy and clear.
+  [Cartesia](https://cartesia.ai) (`CARTESIA_API_KEY`) does text to
+  speech (Sonic) and is needed either way. You also need the id of a
+  Cartesia voice (pick one in their playground and copy its id).
+- Cartesia speech to text (Ink) is a supported option
+  (`[stt] provider = "cartesia"`). One honest line: in testing, its
+  chunking and lack of word timings made the address and closer words
+  unreliable, which is why Deepgram is the default.
 
 Text mode needs no keys and no audio device.
 
@@ -76,7 +78,7 @@ Create `~/.config/cc-voice/config.toml`. Only the voice id is required:
 voice = "your-cartesia-voice-id"
 
 [stt]
-provider = "cartesia"  # or "deepgram"
+provider = "deepgram"  # or "cartesia" (see "What you need" above)
 
 [words]
 address = "operator"   # the word that opens a turn
@@ -103,8 +105,8 @@ A project can override any of it with a `.cc-voice.toml` in its folder.
 Keys come from the environment, never the config file:
 
 ```sh
+export DEEPGRAM_API_KEY=...
 export CARTESIA_API_KEY=...
-export DEEPGRAM_API_KEY=...   # only with provider = "deepgram"
 ```
 
 At startup cc-voice names exactly the key the chosen providers need
@@ -216,8 +218,8 @@ synthesizes an utterance with Cartesia, pads it with silence, and
 pushes it through the real gate and adapter at real-time pace:
 
 ```sh
-CARTESIA_API_KEY=... .venv/bin/python tools/live_check.py --stt cartesia
 DEEPGRAM_API_KEY=... CARTESIA_API_KEY=... .venv/bin/python tools/live_check.py --stt deepgram
+CARTESIA_API_KEY=... .venv/bin/python tools/live_check.py --stt cartesia
 ```
 
 ## License
