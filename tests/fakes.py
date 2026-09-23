@@ -144,7 +144,12 @@ class ScriptedClaude:
             await asyncio.sleep(0.001)
 
 
-async def until(pred, tries=500):
+async def until(pred, tries=3000):
+    # 6s nominal budget: under load, several scenario steps in test_voice.py
+    # measured right up against the old 500-try (1s) budget and failed
+    # flakily, not because the condition was slow to become true in wall
+    # time but because the event loop had other tasks (a talking fake mic,
+    # a polling scripted claude) to get through first.
     for _ in range(tries):
         if pred():
             return
