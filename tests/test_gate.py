@@ -221,26 +221,35 @@ def test_open_failure_backs_off_and_loses_nothing():
 
 def test_voice_with_no_words_reconnects_then_asks_for_a_new_mic():
     async def scenario():
-        h = Harness()
+        h = Harness(hold=True)
         h.feed(VOICED, 3)
         await h.settle()
         first = h.session
-        for _ in range(10):                    # 9 s of voice, nothing heard
-            h.feed(VOICED, 1)
-            h.clock.advance(0.9)
+        # a long SILENT pause is not deafness, however long since the last words
+        h.session.q.put_nowait(Final("operator"))
+        await h.settle()
+        h.feed(SILENT, 5)
+        h.clock.advance(30.0)
+        await h.settle()
+        assert h.opener.calls == 1
+        for _ in range(9):                     # 9 s of voice, nothing heard
+            h.feed(VOICED, 25)                 # 1 s
             await h.settle()
         assert h.opener.calls == 2 and first.close_calls == 1 and h.deaf == 0
         assert any(f.get("reason") == "deaf" for f in h.logs)
         assert any("no words" in line for line in h.out)
-        for _ in range(10):
-            h.feed(VOICED, 1)
-            h.clock.advance(0.9)
+        for _ in range(9):
+            h.feed(VOICED, 25)
             await h.settle()
         assert h.opener.calls == 3 and h.deaf == 1  # twice deaf: rebuild the mic
-        # words reset the strike count
+        # words reset the count and the strikes
+        h.feed(VOICED, 25 * 5)
         h.session.q.put_nowait(Final("hello"))
         await h.settle()
-        assert h.gate._deaf_strikes == 0
+        assert h.gate._deaf_strikes == 0 and h.gate._voiced_no_text_s == 0.0
+        h.feed(VOICED, 25 * 5)
+        await h.settle()
+        assert h.opener.calls == 3
 
     run(scenario())
 

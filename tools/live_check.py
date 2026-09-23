@@ -136,13 +136,12 @@ async def main(args) -> int:
     step = int(RATE * CHUNK_S) * 2
     for i in range(0, len(stream), step):
         gate.feed(stream[i:i + step])
-        if i == 0:
-            pass
         await asyncio.sleep(CHUNK_S)
-    # let the hangover run out and the close flush
-    deadline = time.monotonic() + args.hangover + 6.0
+    # a real mic keeps delivering silence: so do we, until the hangover closes the gate
+    deadline = time.monotonic() + args.hangover + 8.0
     while gate.state != Gate.CLOSED and time.monotonic() < deadline:
-        await asyncio.sleep(0.1)
+        gate.feed(bytes(step))
+        await asyncio.sleep(CHUNK_S)
     await gate.stop()
 
     heard = " ".join(marks["finals"]).lower()

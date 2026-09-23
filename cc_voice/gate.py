@@ -19,10 +19,11 @@ costs two seconds, not ten.
 
 Reconnect is automatic: a session the server ends (or errors) while the
 gate still wants one is reopened with the ring flushed again. A session
-that hears voice for `deaf_s` and returns no words is closed and
-reopened; a second deaf session in a row asks the caller to rebuild the
-input device (`on_deaf`), since audio that never transcribes is more
-often a wrong device or rate than a broken link.
+that has heard `deaf_s` of VOICED audio (accumulated, not wall-clock:
+a long silent pause is not deafness) without a word coming back is
+closed and reopened; a second deaf session in a row asks the caller to
+rebuild the input device (`on_deaf`), since audio that never
+transcribes is more often a wrong device or rate than a broken link.
 
 The gate emits its own SpeechStarted at every onset, whichever vendor
 is listening, so the closer's settle window reacts within a frame.
@@ -95,7 +96,8 @@ class Gate:
         self._in_speech = False
         self._text_seen = False
         self._opened_t = 0.0
-        self._last_text_t = 0.0
+        self._voiced_no_text_s = 0.0   # voiced audio since the last words (or the open)
+        self._frame_s = vad.frame_bytes / (rate * 2)
         self._deaf_strikes = 0
         self._reopen = False
         self._close_reason: str | None = None
@@ -113,6 +115,8 @@ class Gate:
             if self._vad.is_speech(frame):
                 self._voiced_run += 1
                 self.last_voice_t = now
+                if self.state != self.CLOSED:
+                    self._voiced_no_text_s += self._frame_s
                 if not self._in_speech and self._voiced_run >= self.onset_frames:
                     self._in_speech = True
                     onset = True
@@ -168,10 +172,7 @@ class Gate:
     def _close_reason_now(self) -> str | None:
         if self._quit:
             return "quit"
-        now = self._clock()
-        if self.deaf_s and self.last_voice_t is not None \
-                and now - self.last_voice_t <= 1.0 \
-                and now - max(self._opened_t, self._last_text_t) > self.deaf_s:
+        if self.deaf_s and self._voiced_no_text_s > self.deaf_s:
             return "deaf"
         if self._hold():
             return None
@@ -182,7 +183,7 @@ class Gate:
     def _note(self, ev) -> None:
         if isinstance(ev, (Partial, Final)) and (ev.text or "").strip():
             self._text_seen = True
-            self._last_text_t = self._clock()
+            self._voiced_no_text_s = 0.0
             self._deaf_strikes = 0
 
     async def _pump(self, session) -> None:
@@ -254,7 +255,7 @@ class Gate:
             self._pending, self._buffer, self._buffer_bytes = [], [], 0
             self._opened_t = self._clock()
             self._text_seen = False
-            self._last_text_t = self._opened_t
+            self._voiced_no_text_s = 0.0
             pump = asyncio.ensure_future(self._pump(session))
             reason = None
             try:
