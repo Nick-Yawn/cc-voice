@@ -71,9 +71,17 @@ wheel bundles it. On Linux, `apt install libportaudio2` first.
 
 ## Configure
 
-Create `~/.config/cc-voice/config.toml`. Only the voice id is required:
+Create `~/.config/cc-voice/config.toml`. The voice id is required;
+`[seat] claude_args` below is the other setting worth setting on
+purpose:
 
 ```toml
+[seat]
+# recommended: let Claude run tools without prompting for each one.
+# "auto" answers what it safely can and denies the rest; "acceptEdits"
+# is the more conservative choice, pre-approving file edits only.
+claude_args = ["--permission-mode", "auto"]
+
 [tts]
 voice = "your-cartesia-voice-id"
 
@@ -91,10 +99,6 @@ earcons = 0.6
 
 [gate]
 hangover_s = 10.0      # quiet after your last words before the speech link closes
-
-[seat]
-# extra flags for the claude child, e.g. to pre-approve edits:
-# claude_args = ["--permission-mode", "acceptEdits"]
 
 [respell]
 # how the voice should say jargon it mangles
@@ -128,7 +132,10 @@ lines that would be spoken (marked `»`), ending with the percent. Local
 commands are `:status`, `:again`, `:back N`, `:stop`, `:resume`,
 `:compact`, `:quit`.
 
-Then with the microphone:
+Then with the microphone. Set the permission mode first (see
+[Configure](#configure) and [Permissions](#permissions) below) — without
+it, Claude denies every tool call that needs approval, and your first
+voice request will silently fail:
 
 ```sh
 cd your-project
@@ -171,7 +178,7 @@ holds no connection.
 Useful flags: `--new` starts a fresh claude session instead of resuming
 the pinned one, `--resume SESSION_ID` pins a specific one, `--voice ID`
 overrides the voice, and anything after `--` goes to claude
-(`cc-voice -- --permission-mode acceptEdits`).
+(`cc-voice -- --permission-mode auto`).
 
 ## How it works
 
@@ -197,9 +204,16 @@ turn.
 ## Permissions
 
 In `claude -p` mode nobody is at the keyboard to answer "Allow this?".
-Whatever your Claude Code settings would prompt for is, for now,
-answered as denied. Pre-approve what you want in your settings, or pass
-a permission mode through: `cc-voice -- --permission-mode acceptEdits`.
+With no permission mode set, whatever your Claude Code settings would
+prompt for is answered as denied — a new install's first voice request
+silently fails this way. Set one: `[seat] claude_args =
+["--permission-mode", "auto"]` in your config (see
+[Configure](#configure)), or pass it through the command line:
+`cc-voice -- --permission-mode auto`. `auto` answers what it safely
+can and denies the rest; `acceptEdits` is the more conservative choice,
+pre-approving file edits only. If neither claude_args nor the
+passthrough args set a permission mode, cc-voice prints a warning at
+startup (to the terminal, never spoken) rather than fail silently.
 Answering prompts by voice is the next thing to build.
 
 ## Development

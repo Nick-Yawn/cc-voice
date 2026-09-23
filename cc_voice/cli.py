@@ -49,6 +49,20 @@ def split_passthrough(argv: list[str]) -> tuple[list[str], list[str]]:
     return argv, []
 
 
+NO_PERMISSION_MODE_WARNING = (
+    "cc-voice: no permission mode set: Claude can't run tools that need"
+    " approval; set [seat] claude_args (see README)")
+
+
+def missing_permission_mode(claude_args: list[str]) -> bool:
+    """True unless --permission-mode (space- or '='-joined) is among the
+    args claude will be spawned with. Left unset, -p mode denies every
+    tool call that needs approval, so a first voice request silently
+    fails."""
+    return not any(a == "--permission-mode" or a.startswith("--permission-mode=")
+                  for a in claude_args)
+
+
 def handle_stray(lock: LockFile, ask=None) -> None:
     """A child claude left by a host that is gone: offer to kill it."""
     stray = lock.stray_child()
@@ -78,6 +92,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.claude:
         cfg["seat"]["claude"] = args.claude
     claude_args = list(cfg["seat"].get("claude_args") or []) + passthrough
+    if missing_permission_mode(claude_args):
+        print(NO_PERMISSION_MODE_WARNING, file=sys.stderr)
 
     sdir = state_dir(project_dir)
     log = EventLog(sdir / "log.jsonl")
