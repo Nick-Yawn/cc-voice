@@ -21,6 +21,7 @@ DEFAULTS: dict = {
     "stt": {
         "provider": "deepgram",
         "language": "en",
+        "cartesia": {"model": "ink-2"},
         "deepgram": {"model": "nova-3"},
     },
     "tts": {

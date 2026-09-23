@@ -1,5 +1,6 @@
-"""The Deepgram and Cartesia adapters against fake websockets, and the
-pure builders and parsers around them."""
+"""The speech-to-text contract, run over every adapter against a
+scripted websocket; then each vendor's own builders and parsers, and
+the Cartesia text-to-speech adapter."""
 
 import asyncio
 import base64
@@ -8,8 +9,15 @@ import urllib.parse
 
 import pytest
 
-from cc_voice.providers import Error, Final, Partial, SpeechStarted, STT, TTS
-from cc_voice.providers.cartesia import CartesiaTTS, parse_message as parse_cartesia, request_json
+from cc_voice.providers import Error, Final, Partial, SpeechStarted, STT, TTS, Word
+from cc_voice.providers.cartesia import (
+    CartesiaSTT,
+    CartesiaTTS,
+    parse_message as parse_cartesia,
+    parse_stt_message,
+    request_json,
+    stt_url,
+)
 from cc_voice.providers.deepgram import DeepgramSTT, listen_url, parse_message as parse_deepgram
 from cc_voice.providers.fake import FakeSTT, FakeTTS
 
@@ -51,6 +59,213 @@ class FakeWS:
         async def me():
             return self
         return me().__await__()
+
+
+class ScriptedWS:
+    """A websocket the test drives: incoming messages are queued, so a
+    reader blocks like a real one; a scripted reply to the vendor's
+    close message stands in for the server's flush and close."""
+
+    def __init__(self):
+        self.sent = []
+        self.closed = False
+        self._q: asyncio.Queue = asyncio.Queue()
+        self.on_close_message = None  # (message) -> list of replies, or None
+
+    def feed(self, *msgs):
+        for m in msgs:
+            self._q.put_nowait(m)
+
+    def end(self):
+        self._q.put_nowait(StopAsyncIteration())
+
+    async def send(self, data):
+        self.sent.append(data)
+        if self.on_close_message is not None:
+            replies = self.on_close_message(data)
+            if replies is not None:
+                self.feed(*replies)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        item = await self._q.get()
+        if isinstance(item, StopAsyncIteration):
+            raise item
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    async def close(self):
+        self.closed = True
+        self.end()
+
+
+class Deepgram:
+    """Deepgram's dialect of the contract."""
+    name = "deepgram"
+    headers = {"Authorization": "Token the-key"}
+    url_head = "wss://api.deepgram.com/v1/listen?"
+
+    @staticmethod
+    def make(connect):
+        return DeepgramSTT("the-key", connect=connect)
+
+    @staticmethod
+    def partial(text):
+        return json.dumps({"type": "Results", "is_final": False,
+                           "channel": {"alternatives": [{"transcript": text}]}})
+
+    @staticmethod
+    def final(text, words):
+        return json.dumps({"type": "Results", "is_final": True, "channel": {"alternatives": [
+            {"transcript": text,
+             "words": [{"word": w, "start": a, "end": b, "confidence": 0.9} for w, a, b in words]}]}})
+
+    @staticmethod
+    def error(msg):
+        return json.dumps({"type": "Error", "message": msg})
+
+    @staticmethod
+    def is_close(data):
+        return isinstance(data, str) and json.loads(data) == {"type": "CloseStream"}
+
+    @staticmethod
+    def close_ack():
+        return [json.dumps({"type": "Metadata"}), StopAsyncIteration()]  # the server closes
+
+
+class Cartesia:
+    """Cartesia's dialect of the contract."""
+    name = "cartesia"
+    headers = {"X-API-Key": "the-key"}
+    url_head = "wss://api.cartesia.ai/stt/websocket?"
+
+    @staticmethod
+    def make(connect):
+        return CartesiaSTT("the-key", connect=connect)
+
+    @staticmethod
+    def partial(text):
+        return json.dumps({"type": "transcript", "is_final": False, "request_id": "r",
+                           "text": text})
+
+    @staticmethod
+    def final(text, words):
+        return json.dumps({"type": "transcript", "is_final": True, "request_id": "r",
+                           "text": text, "duration": 1.5,
+                           "words": [{"word": w, "start": a, "end": b} for w, a, b in words]})
+
+    @staticmethod
+    def error(msg):
+        return json.dumps({"type": "error", "status_code": 400, "title": "Bad request",
+                           "message": msg})
+
+    @staticmethod
+    def is_close(data):
+        return data == "close"
+
+    @staticmethod
+    def close_ack():
+        return [json.dumps({"type": "done", "request_id": "r"})]
+
+
+DIALECTS = [Deepgram, Cartesia]
+
+
+def _connect(ws, seen):
+    async def connect(url, headers):
+        seen["url"], seen["headers"] = url, headers
+        return ws
+    return connect
+
+
+# -- the contract, over every adapter ---------------------------------------------
+
+@pytest.mark.parametrize("vendor", DIALECTS, ids=lambda v: v.name)
+def test_contract_open_carries_key_rate_and_keyterms(vendor):
+    async def scenario():
+        ws, seen = ScriptedWS(), {}
+        stt = vendor.make(_connect(ws, seen))
+        assert isinstance(stt, STT)
+        assert stt.caps.partials and stt.caps.word_timings and stt.caps.keyterms
+        session = await stt.open(rate=16000, keyterms=["operator", "over"])
+        assert seen["headers"] == vendor.headers
+        assert seen["url"].startswith(vendor.url_head)
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(seen["url"]).query)
+        assert q["sample_rate"] == ["16000"] and q["keyterm"] == ["operator", "over"]
+        assert isinstance(session.events(), object)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("vendor", DIALECTS, ids=lambda v: v.name)
+def test_contract_audio_passes_through_and_transcripts_come_back_typed(vendor):
+    async def scenario():
+        ws = ScriptedWS()
+        session = await vendor.make(_connect(ws, {})).open()
+        await session.send(b"\x01\x02" * 4)
+        assert ws.sent == [b"\x01\x02" * 4]
+        ws.feed(vendor.partial("   "), vendor.partial("opera"), "not json", b"binary noise",
+                vendor.final("operator, run it over", [("operator", 0.1, 0.5), ("over", 1.0, 1.3)]))
+        ws.end()
+        events = [ev async for ev in session.events()]
+        assert events[0] == Partial("opera")
+        final = events[1]
+        assert isinstance(final, Final) and final.text == "operator, run it over"
+        assert final.words[0] == Word("operator", 0.1, 0.5, final.words[0].confidence)
+        assert (final.words[1].text, final.words[1].start_s, final.words[1].end_s) == ("over", 1.0, 1.3)
+        assert len(events) == 2
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("vendor", DIALECTS, ids=lambda v: v.name)
+def test_contract_close_is_graceful_and_idempotent(vendor):
+    """close() sends the vendor's close message and the finals the server
+    flushes in reply still reach a reader; then the socket closes."""
+    async def scenario():
+        ws = ScriptedWS()
+        session = await vendor.make(_connect(ws, {})).open()
+        ws.on_close_message = lambda data: (
+            [vendor.final("over", [("over", 2.0, 2.3)])] + vendor.close_ack()
+            if vendor.is_close(data) else None)
+        got = []
+
+        async def read():
+            async for ev in session.events():
+                got.append(ev)
+
+        reader = asyncio.ensure_future(read())
+        await asyncio.sleep(0.01)
+        await session.close()
+        await asyncio.wait_for(reader, 1.0)
+        assert got == [Final("over", (Word("over", 2.0, 2.3, got[0].words[0].confidence),), False)]
+        assert ws.closed and sum(1 for d in ws.sent if vendor.is_close(d)) == 1
+        await session.close()  # a second close sends nothing more
+        assert sum(1 for d in ws.sent if vendor.is_close(d)) == 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("vendor", DIALECTS, ids=lambda v: v.name)
+def test_contract_server_errors_and_broken_links_become_error_events(vendor):
+    async def scenario():
+        ws = ScriptedWS()
+        session = await vendor.make(_connect(ws, {})).open()
+        ws.feed(vendor.error("bad key"))
+        ws.end()
+        events = [ev async for ev in session.events()]
+        assert len(events) == 1 and isinstance(events[0], Error) and "bad key" in events[0].message
+        ws2 = ScriptedWS()
+        session2 = await vendor.make(_connect(ws2, {})).open()
+        ws2.feed(RuntimeError("1011 keepalive timeout"))
+        events = [ev async for ev in session2.events()]
+        assert len(events) == 1 and isinstance(events[0], Error) and "1011" in events[0].message
+        assert vendor.name not in events[0].message  # the core never learns the vendor
+
+    asyncio.run(scenario())
 
 
 # -- Deepgram -------------------------------------------------------------
@@ -139,7 +354,45 @@ def test_deepgram_link_failure_surfaces_as_an_error_event():
     asyncio.run(scenario())
 
 
-# -- Cartesia -------------------------------------------------------------
+# -- Cartesia speech to text --------------------------------------------------
+
+def test_stt_url_carries_version_model_encoding_and_bounded_keyterms():
+    url = stt_url("ink-2", 16000, ["operator", "over"])
+    assert url.startswith("wss://api.cartesia.ai/stt/websocket?")
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+    assert q["cartesia_version"] == ["2026-08-14"] and q["model"] == ["ink-2"]
+    assert q["encoding"] == ["pcm_s16le"] and q["sample_rate"] == ["16000"]
+    assert q["keyterm"] == ["operator", "over"] and "language" not in q
+    # language rides only for the whisper model; keyterms stop at 100 / 1200 chars
+    assert "language=de" in stt_url("ink-whisper", 16000, [], "de")
+    many = [f"word{i}" for i in range(150)]
+    assert len(urllib.parse.parse_qs(urllib.parse.urlparse(
+        stt_url("ink-2", 16000, many)).query)["keyterm"]) == 100
+    longs = ["x" * 500, "y" * 500, "z" * 500]
+    assert urllib.parse.parse_qs(urllib.parse.urlparse(
+        stt_url("ink-2", 16000, longs)).query)["keyterm"] == ["x" * 500, "y" * 500]
+
+
+def test_parse_stt_messages():
+    assert parse_stt_message({"type": "flush_done", "request_id": "r"}) is None
+    assert parse_stt_message({"type": "done"}) == "done"
+    assert parse_stt_message(["nope"]) is None
+    assert parse_stt_message({"type": "transcript", "is_final": False, "text": "  "}) is None
+    assert parse_stt_message({"type": "transcript", "is_final": False, "text": "hel"}) == \
+        Partial("hel")
+    ev = parse_stt_message({"type": "transcript", "is_final": True, "text": "hello there",
+                            "duration": 1.2, "words": [{"word": "hello", "start": 0.2, "end": 0.5},
+                                                       {"word": "there", "start": 0.6, "end": 0.9}]})
+    assert ev == Final("hello there", (Word("hello", 0.2, 0.5, 1.0), Word("there", 0.6, 0.9, 1.0)),
+                       False)
+    assert parse_stt_message({"type": "transcript", "is_final": True, "text": ""}) == \
+        Final("", (), False)
+    err = parse_stt_message({"type": "error", "status_code": 401, "title": "Unauthorized",
+                             "message": "invalid api key"})
+    assert err == Error("Unauthorized: invalid api key")
+
+
+# -- Cartesia text to speech ---------------------------------------------------------
 
 def test_request_json_shape_has_no_speed_field():
     req = json.loads(request_json("sonic-3.6-2026-08-27", "voice-1", "ctx", "Hello.", True))
